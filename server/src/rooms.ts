@@ -26,10 +26,14 @@ interface Client {
   socket: Socket | null;
   role: Role | null;
   disconnectedAt: number;
+  /** Absent depuis assez longtemps pour que l'IA prenne le relais. */
+  away: boolean;
 }
 
 const ROLES: Role[] = ['strategist', 'hero'];
 const ROOM_IDLE_MS = 10 * 60 * 1000;
+/** Une coupure plus courte que ça passe inaperçue : l'IA ne reprend pas le héros. */
+const AWAY_AFTER_MS = 3000;
 const MAX_ROOMS = 200;
 const MAX_CLIENTS_PER_ROOM = 8;
 
@@ -47,12 +51,13 @@ export class Room {
   }
 
   get connected(): Client[] {
+    // (les joueurs en micro-coupure ne reçoivent rien, mais gardent leur rôle)
     return [...this.clients.values()].filter((c) => c.socket);
   }
 
   private slotStatus(role: Role): { status: SlotStatus; name: string | null } {
     const holder = this.slots[role] ? this.clients.get(this.slots[role]!) : undefined;
-    if (holder?.socket) return { status: 'human', name: holder.name };
+    if (holder && (holder.socket || !holder.away)) return { status: 'human', name: holder.name };
     if (holder) return { status: 'reconnecting', name: holder.name };
     return { status: role === 'hero' ? 'ai' : 'open', name: null };
   }
@@ -91,11 +96,12 @@ export class Room {
     if (client) {
       // Reconnexion : on retrouve son rôle s'il lui est encore réservé.
       client.socket = socket;
+      client.away = false;
       client.name = name || client.name;
       if (client.role && this.slots[client.role] !== client.token) client.role = null;
     } else {
       if (this.clients.size >= MAX_CLIENTS_PER_ROOM) return 'Cette partie est complète.';
-      client = { token: randomBytes(16).toString('hex'), name, socket, role: null, disconnectedAt: 0 };
+      client = { token: randomBytes(16).toString('hex'), name, socket, role: null, disconnectedAt: 0, away: false };
       this.clients.set(client.token, client);
     }
     if (!client.role) {
@@ -172,10 +178,6 @@ export class Room {
   disconnect(client: Client, now: number) {
     client.socket = null;
     client.disconnectedAt = now;
-    // L'IA reprend tout de suite le héros ; le slot reste réservé le temps d'une reconnexion.
-    this.syncHeroController();
-    if (this.game && client.role === 'hero') this.game.emit({ t: 'msg', from: 'jeu', text: `${client.name} est déconnecté : l’IA prend le relais.` });
-    this.broadcastLobby();
   }
 
   /** Appelé à chaque tick du serveur. */
@@ -183,7 +185,14 @@ export class Room {
     // Fin du délai de reconnexion : le slot est libéré.
     let changed = false;
     for (const c of this.clients.values()) {
-      if (c.socket || now - c.disconnectedAt < GAME_CONFIG.reconnectGrace * 1000) continue;
+      if (c.socket) continue;
+      if (!c.away && now - c.disconnectedAt >= AWAY_AFTER_MS) {
+        // Absence confirmée : l'IA reprend le héros, le slot reste réservé le temps d'une reconnexion.
+        c.away = true;
+        changed = true;
+        if (this.game && c.role === 'hero') this.game.emit({ t: 'msg', from: 'jeu', text: `${c.name} est déconnecté : l’IA prend le relais.` });
+      }
+      if (now - c.disconnectedAt < GAME_CONFIG.reconnectGrace * 1000) continue;
       if (c.role) {
         this.slots[c.role] = null;
         c.role = null;
@@ -191,7 +200,10 @@ export class Room {
       }
       if (now - c.disconnectedAt > ROOM_IDLE_MS) this.clients.delete(c.token);
     }
-    if (changed) this.broadcastLobby();
+    if (changed) {
+      this.syncHeroController();
+      this.broadcastLobby();
+    }
 
     const connected = this.connected;
     if (connected.length === 0) {

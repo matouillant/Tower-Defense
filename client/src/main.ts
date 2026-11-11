@@ -46,6 +46,10 @@ let panel: { kind: 'tower'; id: number } | { kind: 'slot'; id: number } | { kind
 let movingTower: number | null = null;
 let aiPanelOpen = false;
 
+/** Mêmes conditions que dans style.css : panneau latéral (téléphone couché) ou en bas (téléphone debout). */
+const SIDE_SHEET = matchMedia('(orientation: landscape) and (max-height: 520px)');
+const BOTTOM_SHEET = matchMedia('(max-width: 700px)');
+
 const cmd = (c: Command) => net.send({ m: 'cmd', cmd: c });
 
 function toast(text: string, cls = '') {
@@ -160,7 +164,8 @@ let pendingName = 'Joueur';
 
 net.onStatus = (ok) => {
   online = ok;
-  if (!ok && state) toast('Connexion perdue, reconnexion…', 'err');
+  // Une reconnexion rapide (le serveur renouvelle les connexions régulièrement) reste silencieuse.
+  if (!ok && state) setTimeout(() => !online && toast('Connexion perdue, reconnexion…', 'err'), 2500);
   if (!state) renderLobby();
 };
 
@@ -189,7 +194,7 @@ net.onMessage = (msg: ServerMessage) => {
         scene = created.scene;
         scene.onTap = onTap;
         // La zone de jeu change de taille quand le bandeau ou la barre se remplissent : on recale le canvas.
-        new ResizeObserver(() => created.game.scale.refresh()).observe($('stage'));
+        new ResizeObserver(([entry]) => created.game.scale.setParentSize(entry.contentRect.width, entry.contentRect.height)).observe($('stage'));
       } else scene.setMap(map);
       break;
     case 'state':
@@ -218,6 +223,12 @@ function select(next: typeof panel) {
   if (scene) {
     scene.selectedTower = next?.kind === 'tower' ? next.id : null;
     scene.selectedSlot = next?.kind === 'slot' ? next.id : null;
+    // Sur petit écran, on décale la carte pour que la cible ne soit pas cachée par le panneau.
+    const target = next?.kind === 'tower' ? state?.towers.find((t) => t.id === next.id) : next?.kind === 'slot' ? map?.slots[next.id] : next?.kind === 'deposit' ? map?.deposits[next.id] : null;
+    if (target) {
+      if (SIDE_SHEET.matches) scene.focusOn(target.x, target.y, 0.22, 0);
+      else if (BOTTOM_SHEET.matches) scene.focusOn(target.x, target.y, 0, 0.22);
+    }
   }
   renderGame();
 }
@@ -260,15 +271,18 @@ function renderGame() {
   const hs = heroStats(s.hero.upgrades);
   const timer = s.phase === 'wave' ? `${s.enemies.length + s.toSpawn} ennemis` : `${Math.ceil(s.phaseTimer)} s`;
   const next = s.phase !== 'wave' && isBossWave(s.wave + 1) ? ' · boss à la prochaine !' : '';
-  const heroLine = s.hero.respawnIn > 0 ? `à terre (${Math.ceil(s.hero.respawnIn)} s)` : `${Math.ceil(s.hero.hp)} PV · porte ${s.hero.carry}/${hs.carryCap}`;
+  const heroLine = s.hero.respawnIn > 0 ? `à terre (${Math.ceil(s.hero.respawnIn)} s)` : `${Math.ceil(s.hero.hp)} PV · <span class="l">porte </span>${s.hero.carry}/${hs.carryCap}`;
+  // Deux libellés par info : le long sur grand écran, le court sur téléphone (choisi en CSS).
+  const info = (long: string, short: string, value: string) => `<span><span class="l">${long} </span><span class="s">${short}</span><b>${value}</b></span>`;
   render(
     $('hud'),
-    `<span>Vague <b>${s.wave}</b></span><span>${PHASE_NAME[s.phase]} · ${timer}${next}</span>
-     <span>Base <b>${s.baseHp}</b></span><span>Ressources <b>${Math.floor(s.scrap)}</b></span>
-     <span>Héros (${s.heroController === 'ai' ? 'IA' : 'joueur'}) : ${heroLine}</span>
-     <span class="grow"></span><span class="muted">${role ? ROLE_NAME[role] : 'Spectateur'}${online ? '' : ' · hors ligne'}</span>
-     <span class="ai-msg">${s.heroController === 'ai' && s.ai.message ? `IA : ${esc(s.ai.message)}` : ''}</span>`,
+    `${info('Vague', 'V', String(s.wave))}<span>${s.phase === 'wave' ? '' : `<span class="l">${PHASE_NAME[s.phase]} · </span>`}${timer}${next}</span>
+     ${info('Base', '♥ ', String(s.baseHp))}${info('Ressources', '⛭ ', String(Math.floor(s.scrap)))}
+     <span><span class="l">Héros (${s.heroController === 'ai' ? 'IA' : 'joueur'}) : </span><span class="s">${s.heroController === 'ai' ? 'IA' : 'Héros'} </span>${heroLine}</span>
+     <span class="grow"></span><span class="muted l">${role ? ROLE_NAME[role] : 'Spectateur'}</span>${online ? '' : '<span class="muted">hors ligne</span>'}
+     ${s.heroController === 'ai' && s.ai.message ? `<span class="ai-msg">IA : ${esc(s.ai.message)}</span>` : ''}`,
   );
+  if (scene) scene.follow = role === 'hero';
   renderBar(s);
   renderPanel(s);
   renderAiPanel(s);
@@ -288,6 +302,7 @@ function renderBar(s: GameState) {
   } else if (role === 'hero') {
     html += `<button data-act="deliver">Rentrer à la base</button><button data-act="stop">Stop</button><button data-act="heroTree">Améliorations</button>`;
   }
+  if (scene?.canPan() || scene?.zoomedOut()) html += `<button data-act="overview">${scene.canPan() ? 'Vue d’ensemble' : 'Zoomer'}</button>`;
   html += `<button data-act="menu">Partie ${lobby!.code}</button>`;
   render($('bar'), html);
 }
@@ -451,6 +466,7 @@ $('game').addEventListener('pointerdown', (ev) => {
       }
       break;
     case 'ai': aiPanelOpen = !aiPanelOpen; break;
+    case 'overview': scene?.toggleOverview(); break;
     case 'menu': return select(panel?.kind === 'menu' ? null : { kind: 'menu' });
     case 'heroTree': return select(panel?.kind === 'heroTree' ? null : { kind: 'heroTree' });
     case 'deliver': cmd({ c: 'task', task: { kind: 'deliver' } }); break;

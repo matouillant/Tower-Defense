@@ -36,7 +36,7 @@ export class Net {
   connect(first: ClientMessage) {
     this.ws?.close();
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const ws = new WebSocket(`${proto}://${location.host}/api/ws`);
     this.ws = ws;
     ws.onopen = () => {
       this.retry = 0;

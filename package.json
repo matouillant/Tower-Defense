@@ -12,11 +12,13 @@
     "typecheck": "tsc -p shared --noEmit && tsc -p server && tsc -p client",
     "dev:server": "npm run dev -w server",
     "dev:client": "npm run dev -w client",
-    "build": "npm run build -w client",
-    "start": "npm run start -w server"
+    "build": "npm run build -w client && npm run build:api",
+    "start": "npm run start -w server",
+    "build:api": "esbuild server/src/vercel.ts --bundle --platform=node --format=cjs --target=node20 --outfile=api/ws.js --external:bufferutil --external:utf-8-validate --log-level=warning"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^2.1.0",
+    "esbuild": "^0.21.5"
   }
 }

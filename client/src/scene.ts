@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { ABILITIES, AbilityId, ENEMIES, GameEvent, GameMap, GameState, effectiveTowerStats, baseTowerStats, towerMaxHp, heroStats } from '@td/shared';
 
 export const TILE = 48;
+/** Taille minimale d'une case à l'écran, en pixels, pour rester confortable au doigt. */
+const MIN_TILE = 34;
 
 export type Tap =
   | { kind: 'tower'; id: number }
@@ -48,6 +50,13 @@ export class GameScene extends Phaser.Scene {
   selectedSlot: number | null = null;
   /** Compétence de zone armée : le prochain appui sur la carte la lance. */
   armed: AbilityId | null = null;
+  /** La caméra suit le héros (pour le joueur qui le contrôle), sauf juste après un glissement. */
+  follow = false;
+  private zoom = 1;
+  private cx = 0;
+  private cy = 0;
+  private userZoomed = false;
+  private lastDrag = 0;
 
   constructor() {
     super('game');
@@ -61,16 +70,132 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     if (this.map) this.drawStatic();
-    // On n'accepte un appui que s'il a commencé sur la carte (pas sur un bouton de l'interface).
+    // Un appui court sélectionne ; glisser déplace la carte ; pincer (ou la molette) zoome.
     let pressed = false;
-    this.input.on('pointerdown', () => (pressed = true));
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let pinch = 0;
+    const p1 = this.input.pointer1;
+    const p2 = this.input.pointer2;
+    const gap = () => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (p1.isDown && p2.isDown) {
+        pinch = gap();
+        dragging = true;
+        return;
+      }
+      pressed = true;
+      dragging = false;
+      startX = p.x;
+      startY = p.y;
+    });
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (!pressed || !p.isDown) return;
+      if (p1.isDown && p2.isDown) {
+        const d = gap();
+        if (pinch > 0 && d > 0) this.zoomBy(d / pinch);
+        pinch = d;
+        dragging = true;
+        return;
+      }
+      if (!dragging && Math.hypot(p.x - startX, p.y - startY) > 10) dragging = true;
+      if (dragging && this.canPan()) {
+        this.cx -= (p.x - p.prevPosition.x) / this.zoom;
+        this.cy -= (p.y - p.prevPosition.y) / this.zoom;
+        this.lastDrag = performance.now();
+        this.applyCamera();
+      }
+    });
     this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
-      if (!pressed || !this.map || !this.cur) return;
+      const tap = pressed && !dragging;
+      if (!p1.isDown && !p2.isDown) pinch = 0;
+      if (!this.input.activePointer.isDown && !p1.isDown && !p2.isDown) pressed = false;
+      if (!tap || !this.map || !this.cur) return;
       pressed = false;
       const x = p.worldX / TILE - 0.5;
       const y = p.worldY / TILE - 0.5;
       this.onTap(this.resolveTap(x, y), x, y);
     });
+    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => this.zoomBy(dy > 0 ? 0.9 : 1.1));
+    this.scale.on('resize', () => this.layout());
+    this.layout(true);
+  }
+
+  // ------------------------------------------------------------------ caméra
+
+  private get worldW() {
+    return (this.map?.width ?? 1) * TILE;
+  }
+  private get worldH() {
+    return (this.map?.height ?? 1) * TILE;
+  }
+  private fitZoom() {
+    const { width, height } = this.scale.gameSize;
+    return Math.min(width / this.worldW, height / this.worldH);
+  }
+  /** Zoom par défaut : toute la carte si elle reste lisible, sinon des cases assez grandes pour le doigt. */
+  private defaultZoom() {
+    const fit = this.fitZoom();
+    if (fit * TILE >= MIN_TILE) return fit;
+    // Petit écran : on remplit la hauteur ou la largeur, et on fait glisser dans l'autre sens.
+    const { width, height } = this.scale.gameSize;
+    const cover = Math.max(width / this.worldW, height / this.worldH);
+    return Math.min(1, Math.max(MIN_TILE / TILE, cover));
+  }
+  /** Vrai quand la carte dépasse de l'écran : on peut alors la faire glisser. */
+  canPan() {
+    return this.zoom > this.fitZoom() * 1.01;
+  }
+  /** Vrai quand on est en vue d'ensemble alors qu'un zoom plus confortable existe. */
+  zoomedOut() {
+    return !this.canPan() && this.defaultZoom() > this.fitZoom() * 1.01;
+  }
+  private layout(reset = false) {
+    if (!this.map) return;
+    if (reset) {
+      this.userZoomed = false;
+      this.cx = this.worldW / 2;
+      this.cy = this.worldH / 2;
+    }
+    if (!this.userZoomed) this.zoom = this.defaultZoom();
+    this.zoom = Phaser.Math.Clamp(this.zoom, this.fitZoom(), Math.max(1.6, this.fitZoom()));
+    this.applyCamera();
+  }
+  private applyCamera() {
+    const cam = this.cameras.main;
+    const { width, height } = this.scale.gameSize;
+    const hw = width / this.zoom / 2;
+    const hh = height / this.zoom / 2;
+    this.cx = this.worldW <= hw * 2 ? this.worldW / 2 : Phaser.Math.Clamp(this.cx, hw, this.worldW - hw);
+    this.cy = this.worldH <= hh * 2 ? this.worldH / 2 : Phaser.Math.Clamp(this.cy, hh, this.worldH - hh);
+    cam.setZoom(this.zoom);
+    cam.centerOn(this.cx, this.cy);
+  }
+  private zoomBy(factor: number) {
+    this.zoom *= factor;
+    this.userZoomed = true;
+    this.lastDrag = performance.now();
+    this.layout();
+  }
+  /** Bascule entre la vue d'ensemble et le zoom de jeu. */
+  toggleOverview() {
+    const fit = this.fitZoom();
+    this.zoom = this.zoom > fit * 1.05 ? fit : Math.max(this.defaultZoom(), fit * 1.8);
+    this.userZoomed = true;
+    this.layout();
+  }
+  /**
+   * Amène une case dans la partie de l'écran qui n'est pas couverte par un panneau.
+   * biasX / biasY : décalage en part de l'écran (ex. biasY = 0.2 place la case dans le haut).
+   */
+  focusOn(x: number, y: number, biasX = 0, biasY = 0) {
+    if (!this.canPan()) return;
+    const { width, height } = this.scale.gameSize;
+    this.cx = px(x) + (width * biasX) / this.zoom;
+    this.cy = px(y) + (height * biasY) / this.zoom;
+    this.lastDrag = performance.now();
+    this.applyCamera();
   }
 
   private resolveTap(x: number, y: number): Tap {
@@ -120,7 +245,7 @@ export class GameScene extends Phaser.Scene {
     bg.fillStyle(0x3d7ea6).fillRoundedRect(m.base.x * TILE + 3, m.base.y * TILE + 3, TILE - 6, TILE - 6, 8);
     label(m.base.x, m.base.y, '⌂', '#ffffff');
     this.g = this.add.graphics();
-    this.cameras.main.setBounds(0, 0, m.width * TILE, m.height * TILE);
+    if (this.cameras?.main) this.layout(true);
   }
 
   pushState(state: GameState, events: GameEvent[]) {
@@ -146,6 +271,11 @@ export class GameScene extends Phaser.Scene {
     if (!s || !this.g) return;
     const g = this.g;
     g.clear();
+    if (this.follow && s.hero.respawnIn <= 0 && this.canPan() && performance.now() - this.lastDrag > 2500) {
+      this.cx += (px(s.hero.x) - this.cx) * 0.08;
+      this.cy += (px(s.hero.y) - this.cy) * 0.08;
+      this.applyCamera();
+    }
     // Interpolation entre les deux derniers états reçus, pour un mouvement fluide.
     const a = Math.min(1, (performance.now() - this.curAt) / this.interval);
     const lerp = (from: number | undefined, to: number) => (from === undefined ? to : from + (to - from) * a);
@@ -259,10 +389,10 @@ export function createGame(parent: HTMLElement, map: GameMap): { game: Phaser.Ga
     type: Phaser.AUTO,
     parent,
     backgroundColor: '#14181f',
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH, width: map.width * TILE, height: map.height * TILE },
+    scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%', expandParent: false },
     scene,
     banner: false,
-    input: { activePointers: 2 },
+    input: { activePointers: 3 },
   });
   return { game, scene };
 }

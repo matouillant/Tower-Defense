@@ -32,14 +32,17 @@ small, .muted { color: var(--muted); }
 #lobby .row > * { flex: 1; }
 
 /* ---- Jeu ---- */
-#game { height: 100dvh; display: flex; flex-direction: column; }
+#game { height: 100dvh; display: flex; flex-direction: column; position: relative; overflow: hidden; }
 #hud { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 #hud b { color: var(--accent); }
 #hud .grow { flex: 1; }
-#hud .ai-msg { color: var(--ai); flex-basis: 100%; min-height: 1.3em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#stage { flex: 1; min-height: 0; position: relative; }
-#canvas { position: absolute; inset: 0; }
-#bar { display: flex; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); overflow-x: auto; }
+#hud .ai-msg { color: var(--ai); flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#hud .s { display: none; }
+#hud span { white-space: nowrap; }
+#stage { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+#canvas { position: absolute; inset: 0; touch-action: none; }
+#canvas canvas { display: block; touch-action: none; }
+#bar { position: relative; z-index: 2; display: flex; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--panel); border-top: 1px solid var(--line); overflow-x: auto; }
 #bar button { white-space: nowrap; flex: 0 0 auto; }
 #panel, #ai-panel { position: absolute; left: 8px; right: 8px; bottom: calc(58px + env(safe-area-inset-bottom)); max-width: 520px; max-height: 55dvh; overflow-y: auto; margin: 0 auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px; box-shadow: 0 8px 30px #0009; z-index: 5; }
 .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
@@ -57,3 +60,39 @@ small, .muted { color: var(--muted); }
 .toast { background: #000c; border: 1px solid var(--line); border-radius: 20px; padding: 6px 12px; max-width: 90vw; }
 .toast.ia { border-color: var(--ai); color: var(--ai); }
 .toast.err { border-color: var(--bad); color: #ffb4a8; }
+
+/* ---- Confort tactile ---- */
+@media (pointer: coarse) {
+  button { min-height: 44px; padding: 10px 12px; }
+  #lobby input { font-size: 16px; } /* évite le zoom automatique d'iOS à la saisie */
+  .chips button, .grid button { min-height: 44px; }
+  input[type='range'] { height: 32px; }
+}
+html, body { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+#lobby input { -webkit-user-select: text; user-select: text; }
+#hud { padding-left: calc(10px + env(safe-area-inset-left)); padding-right: calc(10px + env(safe-area-inset-right)); padding-top: calc(6px + env(safe-area-inset-top)); }
+#bar { padding-left: calc(8px + env(safe-area-inset-left)); padding-right: calc(8px + env(safe-area-inset-right)); scrollbar-width: none; }
+#bar::-webkit-scrollbar { display: none; }
+
+/* ---- Téléphone : bandeau compact ---- */
+@media (max-width: 700px), (max-height: 520px) {
+  #hud { gap: 2px 10px; padding-top: calc(4px + env(safe-area-inset-top)); padding-bottom: 4px; font-size: 13px; }
+  #hud .l { display: none; }
+  #hud .s { display: inline; color: var(--muted); }
+  #toasts { top: calc(40px + env(safe-area-inset-top)); }
+  .toast { font-size: 13px; }
+}
+
+/* ---- Téléphone debout : panneau en bas, qui laisse le haut de la carte visible ---- */
+@media (max-width: 700px) {
+  #panel, #ai-panel { left: 0; right: 0; bottom: calc(57px + env(safe-area-inset-bottom)); max-width: none; max-height: 44dvh; border-radius: 14px 14px 0 0; border-bottom: 0; }
+  .grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---- Téléphone couché : panneau sur le côté droit, la carte reste visible à gauche ---- */
+@media (orientation: landscape) and (max-height: 520px) {
+  #panel, #ai-panel { left: auto; right: calc(6px + env(safe-area-inset-right)); top: calc(34px + env(safe-area-inset-top)); bottom: calc(57px + env(safe-area-inset-bottom)); width: min(44vw, 340px); max-height: none; margin: 0; border-radius: 12px; border-bottom: 1px solid var(--line); padding: 10px; }
+  .grid { grid-template-columns: 1fr; }
+  #modal .box { max-height: 90dvh; overflow-y: auto; }
+  #bar { padding-top: 4px; padding-bottom: calc(4px + env(safe-area-inset-bottom)); }
+}

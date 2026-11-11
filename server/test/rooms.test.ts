@@ -58,7 +58,11 @@ describe('salons', () => {
     room.handle(p1, { m: 'start' });
     expect(room.game!.state.heroController).toBe('human');
 
+    // Micro-coupure : rien ne change. Au-delà de quelques secondes, l'IA reprend.
     room.disconnect(p2, 10_000);
+    room.tick(11_000, DT);
+    expect(room.game!.state.heroController).toBe('human');
+    room.tick(14_000, DT);
     expect(room.game!.state.heroController).toBe('ai');
     expect(room.lobby().slots[1].status).toBe('reconnecting');
 

@@ -36,7 +36,8 @@ npm run typecheck
 
 Un seul service à héberger : le serveur Node sert aussi le client compilé et les WebSockets (`/ws`).
 
-- **Avec Docker** (Railway, Fly.io, Render, VPS) : le `Dockerfile` à la racine suffit. Le port vient de la variable `PORT` (3000 par défaut).
+- **Sur Vercel** : `vercel.json` est prêt. Le client est servi en statique et les WebSockets passent par la fonction `api/ws.js`, générée par `npm run build:api` à partir de `server/src/vercel.ts`. Limites propres à Vercel : les parties vivent dans la mémoire d'une instance de fonction (elles peuvent être perdues si Vercel en démarre une autre ou après un redéploiement), et chaque connexion est renouvelée au bout de la durée maximale de la fonction (le client se reconnecte tout seul).
+- **Avec Docker** (Railway, Fly.io, Render, VPS) : c'est l'option la plus fiable pour des parties longues. : le `Dockerfile` à la racine suffit. Le port vient de la variable `PORT` (3000 par défaut).
 - **Sans Docker** : `npm ci && npm run build && npm start`.
 
 À savoir : les parties sont en mémoire, donc **une seule instance** (pas de répartition de charge), et un redémarrage du serveur termine les parties en cours. Derrière un proxy, il faut laisser passer les WebSockets.
@@ -81,4 +82,4 @@ Ces chiffres n'ont pas encore été réglés par des parties réelles. Dans les 
 - Le « changement de mode » d'une tour se limite au choix de la cible.
 - Le chemin des ennemis n'est pas modifiable par les joueurs.
 - Formes géométriques uniquement, pas de sons.
-- Sur téléphone, les panneaux recouvrent une bonne partie de la carte.
+- Sur téléphone : glisser pour déplacer la carte, pincer pour zoomer ; l'affichage n'est pas encore net sur les écrans haute densité.
