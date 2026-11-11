@@ -8,3 +8,6 @@ export * from './config/enemies';
 export * from './config/game';
 export * from './sim/types';
 export * from './protocol';
+export * from './sim/stats';
+export * from './sim/game';
+export * from './sim/ai';
