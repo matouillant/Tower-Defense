@@ -1,0 +1,17 @@
+{
+  "name": "@td/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@td/shared": "*",
+    "phaser": "^3.87.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  }
+}

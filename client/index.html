@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#14181f" />
+    <title>Tower Defense coopératif</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="lobby"></div>
+    <div id="game" hidden>
+      <div id="hud"></div>
+      <div id="stage"><div id="canvas"></div></div>
+      <div id="bar"></div>
+      <div id="panel" hidden></div>
+      <div id="ai-panel" hidden></div>
+      <div id="modal" hidden></div>
+    </div>
+    <div id="toasts"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
