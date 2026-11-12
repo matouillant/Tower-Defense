@@ -8,6 +8,7 @@ import {
   GameMap,
   GameState,
   HERO_NODES,
+  SimSave,
   RANGE_UPGRADE,
   rangeUpgradeCost,
   LobbyState,
@@ -294,6 +295,10 @@ net.onStatus = (ok) => {
   if (!state) renderLobby();
 };
 
+/** Dernière sauvegarde reçue : si le serveur perd la partie (redémarrage), on la lui renvoie. */
+let lastSim: SimSave | null = null;
+let restoring = false;
+
 net.onMessage = (msg: ServerMessage) => {
   switch (msg.m) {
     case 'joined':
@@ -332,6 +337,8 @@ net.onMessage = (msg: ServerMessage) => {
       } else scene.setMap(map);
       break;
     case 'state':
+      if (msg.sim) lastSim = msg.sim;
+      restoring = false;
       state = msg.state;
       announceNewEnemies(msg.state);
       scene?.pushState(msg.state, msg.events);
@@ -339,6 +346,18 @@ net.onMessage = (msg: ServerMessage) => {
       renderGame();
       break;
     case 'error':
+      if (msg.code === 'noroom' && state && map && lastSim && net.session && state.phase !== 'over' && !restoring) {
+        // Le serveur a redémarré et perdu la partie : on la lui renvoie, elle reprend là où elle en était.
+        restoring = true;
+        net.send({ m: 'restore', code: net.session.code, name: net.session.name, token: net.session.token, role, seed: map.requestedSeed, paused: !!lobby?.paused, state, sim: lastSim });
+        toast('Le serveur a redémarré : reprise de la partie…');
+        break;
+      }
+      if (msg.code === 'noroom' && state) {
+        toast('La partie a été perdue par le serveur.', 'err');
+        goHome();
+        break;
+      }
       toast(msg.text, 'err');
       if (!lobby) saveSession(null);
       break;

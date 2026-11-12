@@ -1,5 +1,6 @@
 import type { GameMap } from './map/types';
 import type { Command, GameEvent, GameState, Role } from './sim/types';
+import type { SimSave } from './sim/game';
 
 /** Alphabet des codes de partie : sans caractères ambigus (0/O, 1/I/L). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -51,13 +52,15 @@ export type ClientMessage =
   /** Mettre en pause ou reprendre. N'importe quel joueur peut faire l'un ou l'autre. */
   | { m: 'pause'; on: boolean }
   | { m: 'cmd'; cmd: Command }
-  | { m: 'ping'; t: number };
+  | { m: 'ping'; t: number }
+  /** Le serveur a perdu la partie (redémarrage) : le client la renvoie telle qu'il l'a reçue en dernier. */
+  | { m: 'restore'; code: string; name: string; token: string; role: Role | null; seed: number; paused: boolean; state: GameState; sim: SimSave };
 
 /** Serveur -> client. */
 export type ServerMessage =
   | { m: 'joined'; token: string; role: Role | null; lobby: LobbyState }
   | { m: 'lobby'; lobby: LobbyState; role: Role | null }
   | { m: 'started'; map: GameMap }
-  | { m: 'state'; state: GameState; events: GameEvent[] }
-  | { m: 'error'; text: string }
+  | { m: 'state'; state: GameState; events: GameEvent[]; sim?: SimSave }
+  | { m: 'error'; text: string; code?: 'noroom' }
   | { m: 'pong'; t: number };

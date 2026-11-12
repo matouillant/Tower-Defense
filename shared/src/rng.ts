@@ -4,6 +4,13 @@ export class Rng {
   constructor(seed: number) {
     this.s = seed >>> 0;
   }
+  /** État interne, pour sauvegarder et restaurer une partie. */
+  get state(): number {
+    return this.s;
+  }
+  set state(v: number) {
+    this.s = v >>> 0;
+  }
   /** Flottant dans [0, 1). */
   next(): number {
     this.s = (this.s + 0x6d2b79f5) >>> 0;
@@ -28,10 +35,6 @@ export class Rng {
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
-  }
-  /** État interne, pour sauvegarder/restaurer. */
-  get state(): number {
-    return this.s;
   }
 }
 

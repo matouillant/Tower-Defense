@@ -433,3 +433,17 @@ describe('économie de fin de vague et IA', () => {
     expect(task?.kind).toBe('deliver');
   });
 });
+
+describe('reprise après perte du serveur', () => {
+  it('une partie restaurée continue exactement comme l’originale', () => {
+    const map = generateMap(7);
+    const a = new Game(map);
+    a.state.scrap = 2000;
+    for (let i = 0; i < 4; i++) botStrategist(a);
+    a.apply('strategist', { c: 'ready' });
+    for (let i = 0; i < 20 * 30; i++) { botStrategist(a); a.step(DT); }
+    const b = Game.restore(generateMap(7), JSON.parse(JSON.stringify(a.state)), JSON.parse(JSON.stringify(a.exportSim())));
+    for (let i = 0; i < 20 * 30; i++) { a.step(DT); b.step(DT); }
+    expect(JSON.stringify(b.state)).toBe(JSON.stringify(a.state));
+  });
+});

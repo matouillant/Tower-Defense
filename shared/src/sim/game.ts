@@ -38,7 +38,7 @@ import type {
   TowerState,
 } from './types';
 
-interface SpawnEntry {
+export interface SpawnEntry {
   type: EnemyTypeId;
   pathIdx: number;
   at: number;
@@ -68,6 +68,15 @@ export function salvageValue(tower: TowerState, ratio: number): number {
  * Simulation autoritaire, déterministe, sans dépendance (tourne côté serveur et dans les tests).
  * On avance avec step(dt) et on agit avec apply(role, commande).
  */
+/** Ce qui n'est pas dans GameState mais qu'il faut pour reprendre une partie à l'identique. */
+export interface SimSave {
+  rng: number;
+  nextId: number;
+  spawnQueue: SpawnEntry[];
+  waveClock: number;
+  aiClock: number;
+}
+
 export class Game {
   readonly state: GameState;
   private events: GameEvent[] = [];
@@ -106,6 +115,22 @@ export class Game {
       bossesKilled: 0,
     };
     this.resetAllowance();
+  }
+
+  exportSim(): SimSave {
+    return { rng: this.rng.state, nextId: this.nextId, spawnQueue: this.spawnQueue, waveClock: this.waveClock, aiClock: this.aiClock };
+  }
+
+  /** Reprend une partie à partir d'un état sauvegardé (par exemple gardé par un client après une coupure du serveur). */
+  static restore(map: GameMap, state: GameState, sim: SimSave): Game {
+    const g = new Game(map);
+    Object.assign(g.state, state);
+    g.rng.state = sim.rng;
+    g.nextId = Math.max(sim.nextId, 1 + Math.max(0, ...state.towers.map((t) => t.id), ...state.enemies.map((e) => e.id), ...state.pickups.map((p) => p.id)));
+    g.spawnQueue = Array.isArray(sim.spawnQueue) ? sim.spawnQueue : [];
+    g.waveClock = sim.waveClock || 0;
+    g.aiClock = sim.aiClock || 0;
+    return g;
   }
 
   /** Renvoie les événements accumulés depuis le dernier appel, et vide la file. */

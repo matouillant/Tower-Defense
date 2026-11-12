@@ -31,6 +31,20 @@ export class Net {
   session: Session | null = null;
   onMessage: (msg: ServerMessage) => void = () => {};
   onStatus: (online: boolean) => void = () => {};
+  private lastHeard = 0;
+
+  constructor() {
+    // Garde-fou : une connexion « ouverte » qui ne transmet plus rien (serveur coupé sans prévenir) est relancée.
+    setInterval(() => {
+      const ws = this.ws;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (Date.now() - this.lastHeard > 10000) {
+        ws.close();
+        return;
+      }
+      ws.send(JSON.stringify({ m: 'ping', t: Date.now() }));
+    }, 3000);
+  }
 
   /** Ouvre la connexion et envoie le premier message (création ou arrivée dans une partie). */
   connect(first: ClientMessage) {
@@ -40,18 +54,28 @@ export class Net {
     this.ws = ws;
     ws.onopen = () => {
       this.retry = 0;
+      this.lastHeard = Date.now();
       this.onStatus(true);
       ws.send(JSON.stringify(first));
     };
     ws.onmessage = (ev) => {
+      this.lastHeard = Date.now();
+      let msg: ServerMessage;
       try {
-        this.onMessage(JSON.parse(ev.data));
+        msg = JSON.parse(ev.data);
       } catch {
-        /* message illisible : ignoré */
+        return; // message illisible : ignoré
+      }
+      try {
+        this.onMessage(msg);
+      } catch (err) {
+        // Une erreur d'affichage ne doit jamais bloquer la réception des messages suivants.
+        console.error(err);
       }
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
+      this.ws = null;
       this.onStatus(false);
       // Reconnexion automatique avec le jeton, pour reprendre son rôle.
       const s = this.session;

@@ -6,7 +6,9 @@ import {
   GAME_CONFIG,
   Game,
   GameMap,
+  GameState,
   LobbyState,
+  SimSave,
   Role,
   SPEEDS,
   ServerMessage,
@@ -47,6 +49,7 @@ export class Room {
   /** Jeton du joueur qui tient chaque rôle (connecté ou en cours de reconnexion). */
   slots: Record<Role, string | null> = { strategist: null, hero: null };
   private sinceState = 0;
+  private sinceSave = 1;
   /** Temps de jeu en attente : la simulation avance toujours par pas fixes, quelle que soit la vitesse. */
   private pending = 0;
   /** Joueur qui a mis la partie en pause (null = elle tourne). */
@@ -104,6 +107,25 @@ export class Room {
   /** Premier rôle libre pour un nouvel arrivant : stratège s'il manque, sinon héros à la place de l'IA. */
   private freeRole(): Role | null {
     return ROLES.find((r) => this.slots[r] === null) ?? null;
+  }
+
+  /**
+   * Reprise d'une partie perdue par le serveur : on la recrée à partir de ce que le client a gardé,
+   * avec son jeton et son rôle. La carte est régénérée à partir de sa seed (génération déterministe).
+   */
+  restoreGame(state: GameState, sim: SimSave, paused: boolean, by: string) {
+    this.game = Game.restore(this.map, state, sim);
+    this.pausedBy = paused ? by : null;
+    this.pending = 0;
+  }
+
+  /** Crée le client avec un jeton connu (reprise après redémarrage du serveur). */
+  adopt(socket: Socket, name: string, token: string, role: Role | null): Client | string {
+    if (this.clients.has(token)) return this.join(socket, name, token);
+    const client: Client = { token, name, socket, role: null, disconnectedAt: 0, away: false, speed: 1 };
+    this.clients.set(token, client);
+    if (role && ROLES.includes(role) && this.slots[role] === null) this.assign(client, role);
+    return this.join(socket, name, token);
   }
 
   join(socket: Socket, name: string, token?: string): Client | string {
@@ -299,7 +321,11 @@ export class Room {
 
   private sendState() {
     if (!this.game) return;
-    const payload = JSON.stringify({ m: 'state', state: this.game.state, events: this.game.drainEvents() } satisfies ServerMessage);
+    // Une fois par seconde, on joint de quoi reprendre la partie si le serveur la perd (redémarrage de l'instance).
+    this.sinceSave += 1 / GAME_CONFIG.snapshotRate;
+    const withSim = this.sinceSave >= 1;
+    if (withSim) this.sinceSave = 0;
+    const payload = JSON.stringify({ m: 'state', state: this.game.state, events: this.game.drainEvents(), ...(withSim ? { sim: this.game.exportSim() } : {}) } satisfies ServerMessage);
     for (const c of this.connected) c.socket!.send(payload);
   }
 
@@ -320,6 +346,14 @@ export class RoomManager {
   }
 
   /** Seed fournie par le joueur (nombre ou texte libre), sinon tirée au hasard. */
+  /** Recrée un salon perdu, avec son code d'origine. */
+  recreate(code: string, seed: number): Room | string {
+    if (this.rooms.size >= MAX_ROOMS) return 'Le serveur est plein, réessaie plus tard.';
+    const room = new Room(code, seed >>> 0);
+    this.rooms.set(code, room);
+    return room;
+  }
+
   create(seedInput?: string): Room | string {
     if (this.rooms.size >= MAX_ROOMS) return 'Le serveur est plein, réessaie plus tard.';
     const text = (seedInput ?? '').trim().slice(0, 40);
