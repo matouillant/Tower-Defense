@@ -98,6 +98,27 @@ describe('salons', () => {
     expect(room.speed).toBe(3);
   });
 
+  it('pause : n’importe quel joueur la met ou l’enlève, la simulation s’arrête mais on peut construire', () => {
+    const room = new RoomManager().create() as Room;
+    const p1 = room.join(fakeSocket(), 'Alice') as any;
+    const p2 = room.join(fakeSocket(), 'Bob') as any;
+    room.handle(p1, { m: 'start' });
+    room.tick(1000, DT);
+    room.handle(p2, { m: 'pause', on: true });
+    expect(room.lobby().paused).toBe('Bob');
+    const tick = room.game!.state.tick;
+    const timer = room.game!.state.phaseTimer;
+    for (let i = 0; i < 20; i++) room.tick(2000 + i * 50, DT);
+    expect(room.game!.state.tick).toBe(tick);
+    expect(room.game!.state.phaseTimer).toBe(timer);
+    room.handle(p1, { m: 'cmd', cmd: { c: 'build', slotId: 0, type: 'canon' } });
+    expect(room.game!.state.towers.length).toBe(1);
+    room.handle(p1, { m: 'pause', on: false });
+    expect(room.lobby().paused).toBeNull();
+    room.tick(4000, DT);
+    expect(room.game!.state.tick).toBeGreaterThan(tick);
+  });
+
   it('la partie se met en pause quand plus personne n’est connecté', () => {
     const room = new RoomManager().create() as Room;
     const p1 = room.join(fakeSocket(), 'Alice') as any;

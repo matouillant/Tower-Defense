@@ -26,6 +26,8 @@ export interface LobbyState {
   started: boolean;
   /** Vitesse appliquée : la plus lente de celles demandées par les joueurs humains. */
   speed: number;
+  /** Nom du joueur qui a mis la partie en pause, ou null si elle tourne. */
+  paused: string | null;
   slots: LobbySlot[];
   /** Nombre de spectateurs connectés sans rôle. */
   spectators: number;
@@ -42,6 +44,8 @@ export type ClientMessage =
   | { m: 'start' }
   /** Vitesse souhaitée. Elle ne s'applique que si tous les joueurs humains demandent au moins autant. */
   | { m: 'speed'; speed: number }
+  /** Mettre en pause ou reprendre. N'importe quel joueur peut faire l'un ou l'autre. */
+  | { m: 'pause'; on: boolean }
   | { m: 'cmd'; cmd: Command }
   | { m: 'ping'; t: number };
 

@@ -5277,6 +5277,8 @@ var Room = class {
   tickCount = 0;
   /** Temps de jeu en attente : la simulation avance toujours par pas fixes, quelle que soit la vitesse. */
   pending = 0;
+  /** Joueur qui a mis la partie en pause (null = elle tourne). */
+  pausedBy = null;
   emptySince = 0;
   get connected() {
     return [...this.clients.values()].filter((c) => c.socket);
@@ -5298,6 +5300,7 @@ var Room = class {
       seed: this.map.requestedSeed,
       started: !!this.game,
       speed: this.speed,
+      paused: this.pausedBy,
       slots: ROLES.map((role) => ({ role, ...this.slotStatus(role) })),
       spectators: this.connected.filter((c) => !c.role).length
     };
@@ -5378,6 +5381,16 @@ var Room = class {
         this.broadcastLobby();
         return;
       }
+      case "pause": {
+        if (!this.game || !client.role || this.game.state.phase === "over") return;
+        const on = !!msg.on;
+        if (on === (this.pausedBy !== null)) return;
+        this.pausedBy = on ? client.name : null;
+        this.game.emit({ t: "msg", from: "jeu", text: on ? `${client.name} a mis la partie en pause.` : `${client.name} relance la partie.` });
+        this.broadcastLobby();
+        this.sendState();
+        return;
+      }
       case "start": {
         if (this.game) return;
         if (client.role !== "strategist") return this.send(client, { m: "error", text: "Seul le strat\xE8ge peut lancer la partie." });
@@ -5438,17 +5451,21 @@ var Room = class {
     }
     this.emptySince = 0;
     if (!this.game) return;
-    this.pending += dt * this.speed * GAME_CONFIG.gameSpeed;
-    for (let i = 0; this.pending >= dt - 1e-9 && i < 8; i++) {
-      this.game.step(dt);
-      this.pending -= dt;
+    if (!this.pausedBy) {
+      this.pending += dt * this.speed * GAME_CONFIG.gameSpeed;
+      for (let i = 0; this.pending >= dt - 1e-9 && i < 8; i++) {
+        this.game.step(dt);
+        this.pending -= dt;
+      }
     }
     this.tickCount++;
     const every = Math.max(1, Math.round(GAME_CONFIG.tickRate / GAME_CONFIG.snapshotRate));
-    if (this.tickCount % every === 0) {
-      const payload = JSON.stringify({ m: "state", state: this.game.state, events: this.game.drainEvents() });
-      for (const c of connected) c.socket.send(payload);
-    }
+    if (this.tickCount % every === 0) this.sendState();
+  }
+  sendState() {
+    if (!this.game) return;
+    const payload = JSON.stringify({ m: "state", state: this.game.state, events: this.game.drainEvents() });
+    for (const c of this.connected) c.socket.send(payload);
   }
   isExpired(now) {
     return this.emptySince > 0 && now - this.emptySince > ROOM_IDLE_MS;

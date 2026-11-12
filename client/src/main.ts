@@ -311,7 +311,7 @@ function renderGame() {
     `${pill('wave', '', `<span class="l">Vague </span><span class="s">V</span><b>${s.wave}</b>`)}
      ${pill('heart', '<i>♥</i>', `<b>${s.baseHp}</b>`)}${pill('scrap', bolt, `<b>${Math.floor(s.scrap)}</b>`)}
      ${pill('hero', `<img src="${ART.hero.url}" alt="" />`, `<span class="l">${s.heroController === 'ai' ? 'IA · ' : ''}</span>${heroLine}`)}
-     <span class="grow"></span><span class="speed">${speedBtns}</span>${speedCycle}`,
+     <span class="grow"></span>${role ? `<button data-act="pause" class="pause-btn ${lobby.paused ? 'on' : ''}" title="Pause (touche P ou Espace)">${lobby.paused ? '▶' : '❚❚'}</button>` : ''}<span class="speed">${speedBtns}</span>${speedCycle}`,
   );
   // Bulle de l'IA, en bas de la carte, sans rien décaler. Visible pour le stratège, qui la pilote.
   const aiText = s.heroController === 'ai' && role === 'strategist' ? s.ai.message : '';
@@ -332,6 +332,12 @@ function renderGame() {
       : `<span class="tag">${label} dans ${Math.ceil(s.phaseTimer)} s</span>`;
   }
   if (!online) over += `<span class="tag bad">hors ligne</span>`;
+  // Pause : un voile sur la carte, avec le bouton pour reprendre.
+  const pauseEl = $('pause');
+  pauseEl.hidden = !lobby.paused || s.phase === 'over';
+  render(pauseEl, lobby.paused
+    ? `<div class="box"><h2>Pause</h2><p>${esc(lobby.paused)} a mis la partie en pause.</p><p class="muted">Vous pouvez construire et améliorer en attendant.</p>${role ? '<button class="primary" data-act="resume">▶ Reprendre</button>' : ''}</div>`
+    : '');
   render($('overlay'), over);
   if (scene) scene.follow = role === 'hero';
   renderBar(s);
@@ -509,6 +515,8 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'close': movingTower = null; return select(null);
     case 'ready': cmd({ c: 'ready' }); break;
     case 'speed': net.send({ m: 'speed', speed: Number(id) }); break;
+    case 'pause': net.send({ m: 'pause', on: !lobby!.paused }); break;
+    case 'resume': net.send({ m: 'pause', on: false }); break;
     case 'speedCycle': {
       const mine = lobby!.slots.find((sl) => sl.role === role)?.speed ?? lobby!.speed;
       net.send({ m: 'speed', speed: SPEEDS[(SPEEDS.indexOf(mine) + 1) % SPEEDS.length] });
@@ -547,6 +555,19 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'again': saveSession(null); location.href = '/'; return;
   }
   renderGame();
+});
+
+// Clavier (ordinateur) : P ou Espace pour la pause, Échap pour fermer un panneau.
+window.addEventListener('keydown', (ev) => {
+  if (!state || !lobby?.started || (ev.target as HTMLElement).tagName === 'INPUT') return;
+  if (ev.key === 'p' || ev.key === 'P' || ev.key === ' ') {
+    ev.preventDefault();
+    if (role) net.send({ m: 'pause', on: !lobby.paused });
+  } else if (ev.key === 'Escape') {
+    movingTower = null;
+    if (scene) scene.armed = null;
+    select(null);
+  }
 });
 
 // ---------------------------------------------------------------- démarrage

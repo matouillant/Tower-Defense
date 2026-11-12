@@ -217,3 +217,15 @@ button.on { background: linear-gradient(#5cecff, #1aa6d6); border-color: #c9f8ff
 }
 /* Panneau ouvert sur téléphone debout : la bulle de l'IA passe au-dessus du panneau masqué, donc on la cache. */
 @media (max-width: 700px) { #game:has(#panel:not([hidden])) #ai-say, #game:has(#ai-panel:not([hidden])) #ai-say { display: none; } }
+
+/* ================= Pause ================= */
+.pause-btn { min-width: 38px; padding: 4px 8px; margin-right: 6px; font-size: 13px; letter-spacing: -1px; }
+/* Voile léger et carte nette : on doit pouvoir construire pendant la pause. */
+#pause { position: absolute; inset: 0; z-index: 4; display: flex; align-items: flex-start; justify-content: center; padding: 64px 16px 16px; background: rgba(3, 6, 14, 0.3); pointer-events: none; }
+#pause .box { pointer-events: auto; background: linear-gradient(#17264a, #0f1a34); border: 2px solid #35e0ff66; border-radius: 14px; box-shadow: 0 0 0 2px var(--ink), 0 0 26px #35e0ff26; padding: 16px 20px; text-align: center; max-width: 340px; }
+#pause h2 { margin: 0 0 6px; color: var(--neon); text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 16px #35e0ff88; }
+#pause p { margin: 4px 0; }
+@media (max-width: 700px), (max-height: 520px) {
+  .pause-btn { min-height: 30px !important; padding: 2px 8px !important; margin-right: 4px; }
+  #pause .box { padding: 12px 14px; }
+}
