@@ -359,9 +359,7 @@ let previewByTouch = false;
 function setPreview(id: TowerTypeId | null) {
   previewType = id;
   if (!scene) return;
-  if (!id) { scene.previewRange = null; return; }
-  const b = TOWERS[id].base;
-  scene.previewRange = b.range > 0 ? { range: b.range, aura: false } : { range: b.auraRadius, aura: true };
+  scene.previewType = id;
 }
 
 function select(next: typeof panel) {
@@ -376,6 +374,8 @@ function select(next: typeof panel) {
     if (target) {
       if (SIDE_SHEET.matches) scene.focusOn(target.x, target.y, 0.22, 0);
       else if (BOTTOM_SHEET.matches) scene.focusOn(target.x, target.y, 0, 0.22);
+      // Grand écran : le panneau se range du côté opposé à la cible, pour ne pas cacher sa zone de tir.
+      else if (map) $('panel').dataset.side = target.x < map.width / 2 ? 'right' : 'left';
     }
   }
   renderGame();
@@ -496,9 +496,18 @@ const pct = (v: number) => `${Math.round(v * 100)} %`;
 const fmt = (v: number) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
 
 /** Les caractéristiques utiles d'une tour, en une phrase : dégâts, effets spéciaux, aura, production. */
+const SHAPE_NAME = { circle: 'circulaire', line: 'en ligne', cone: 'en cône' } as const;
+function zoneLabel(b: TowerStats): string {
+  if (b.range > 0) return `portée ${b.range} (${SHAPE_NAME[b.shape]})`;
+  if (b.auraRadius > 0) return `aura ${b.auraRadius} cases`;
+  return '';
+}
+
+const FACING_ARROWS = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
+
 function statBits(st: TowerStats): string[] {
   const bits: string[] = [];
-  if (st.damage > 0) bits.push(`dégâts ${fmt(st.damage)}`, `portée ${st.range.toFixed(1)}`, `un tir toutes les ${st.cooldown.toFixed(2)} s`);
+  if (st.damage > 0) bits.push(`dégâts ${fmt(st.damage)}`, `portée ${st.range.toFixed(1)} (${SHAPE_NAME[st.shape]})`, `un tir toutes les ${st.cooldown.toFixed(2)} s`);
   if (st.splash > 0) bits.push(`zone ${st.splash.toFixed(1)}`);
   if (st.chain > 0) bits.push(`${st.chain} rebond${st.chain > 1 ? 's' : ''}`);
   if (st.ramp > 0) bits.push(`monte jusqu’à +${Math.round(st.ramp * st.rampMax * 100)} % sur une même cible`);
@@ -514,6 +523,7 @@ function statBits(st: TowerStats): string[] {
     if (st.auraHeal > 0) a.push(`répare ${fmt(st.auraHeal)} PV/s`);
     if (a.length) bits.push(`voisines (${fmt(st.auraRadius)} cases) : ${a.join(', ')}`);
   }
+  if (st.dropOff) bits.push('le héros y dépose ses ressources');
   if (st.income > 0) bits.push(`produit ${st.income.toFixed(1)} ressource/s`);
   return bits;
 }
@@ -535,11 +545,18 @@ function towerPanel(s: GameState, t: TowerState): string {
     html += `<div class="grid">
       <button data-act="task" data-kind="repair" ${missing < 1 ? 'disabled' : ''}>Réparer<small>${missing < 1 ? (t.hp >= max - 1 ? 'En bon état' : 'Maximum en pleine vague') : `environ ${cost} ressources`}</small></button>
       ${ammoMax > 0 ? `<button data-act="task" data-kind="reload" ${t.ammo >= ammoMax ? 'disabled' : ''}>Recharger<small>${Math.ceil(def.cost * G.reloadCostRatio * (1 - t.ammo / ammoMax))} ressources</small></button>` : ''}
+      ${def.base.dropOff ? '<button data-act="deliver">Aller déposer<small>au dépôt le plus proche</small></button>' : ''}
       <button class="danger" data-act="task" data-kind="recycle">Recycler<small>+${salvageValue(t, G.recycleRatio)} ressources</small></button></div>`;
     return html;
   }
 
   const ups = availableUpgrades(t);
+  if (def.base.dropOff) {
+    html += `<div class="muted">Le héros y dépose ses ressources, sans retourner à la base (la base reste nécessaire pour se soigner).</div>`;
+    html += `<div class="section">Actions</div><div class="chips"><button class="danger" data-act="sell">Vendre (+${salvageValue(t, G.sellRatio)})</button>
+      <button data-act="move">Déplacer (-${Math.ceil(t.invested * G.moveCostRatio)})</button></div>`;
+    return html;
+  }
   html += `<div class="section">Améliorations (une seule voie possible) <button class="mini" data-act="tree" data-id="${t.type}">Voir l’arbre</button></div>`;
   const rangeLeft = t.rangeLvl < RANGE_UPGRADE.maxLevel;
   const rangeBtn = (def.base.range > 0 || def.base.auraRadius > 0)
@@ -550,6 +567,12 @@ function towerPanel(s: GameState, t: TowerState): string {
   html += ups.length || rangeBtn
     ? `<div class="grid">${rangeBtn}${ups.map((n) => `<button data-act="upgrade" data-id="${n.id}" ${s.scrap < n.cost ? 'disabled' : ''}><b>${n.name}</b> · ${n.cost}<small>${n.desc}</small></button>`).join('')}</div>`
     : `<div class="muted">Arbre terminé.</div>`;
+  if (st.shape !== 'circle' && st.range > 0) {
+    html += `<div class="section">Orientation ${st.shape === 'line' ? '(le tir suit cet axe)' : '(le cône vise cette direction)'}</div><div class="chips">
+      <button data-act="rotate" data-id="${(t.facing + 7) % 8}">⟲</button>
+      ${FACING_ARROWS.map((a, i) => `<button data-act="rotate" data-id="${i}" class="${t.facing === i ? 'on' : ''}">${a}</button>`).join('')}
+      <button data-act="rotate" data-id="${(t.facing + 1) % 8}">⟳</button></div>`;
+  }
   const modes = [['first', 'Le plus avancé'], ['strong', 'Le plus fort'], ['weak', 'Le plus faible'], ['fast', 'Le plus rapide']];
   // Un relais ne tire pas : le choix de cible n'a pas de sens pour lui.
   if (st.damage > 0) html += `<div class="section">Cible</div><div class="chips">${modes.map(([m, l]) => `<button data-act="targeting" data-id="${m}" class="${t.targeting === m ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -638,9 +661,9 @@ function renderPanel(s: GameState) {
     else {
       const high = map!.slots[panel.id].high;
       html = `<div class="panel-head"><h3>Construire${high ? ' (point haut : +20 % de portée)' : ''}</h3><button data-act="close">✕</button></div><div class="grid">${(Object.keys(TOWERS) as TowerTypeId[])
-        .map((id) => `<button class="build ${previewType === id ? 'previewing' : ''}" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${towerIcon(id)}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${TOWERS[id].base.range > 0 ? `portée ${TOWERS[id].base.range}` : `aura ${TOWERS[id].base.auraRadius} cases`} · ${TOWERS[id].desc}</small>${previewType === id && previewByTouch ? '<small class="again">Touche encore pour poser</small>' : ''}</span></button>`)
+        .map((id) => `<button class="build ${previewType === id ? 'previewing' : ''}" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${towerIcon(id)}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${zoneLabel(TOWERS[id].base)}${zoneLabel(TOWERS[id].base) ? ' · ' : ''}${TOWERS[id].desc}</small>${previewType === id && previewByTouch ? '<small class="again">Touche encore pour poser</small>' : ''}</span></button>`)
         .join('')}</div>
-        <div class="section">Arbres d’amélioration</div><div class="chips">${(Object.keys(TOWERS) as TowerTypeId[]).map((id) => `<button class="mini" data-act="tree" data-id="${id}">${TOWERS[id].name}</button>`).join('')}</div>`;
+        <div class="section">Arbres d’amélioration</div><div class="chips">${(Object.keys(TOWERS) as TowerTypeId[]).filter((id) => TOWERS[id].nodes.length).map((id) => `<button class="mini" data-act="tree" data-id="${id}">${TOWERS[id].name}</button>`).join('')}</div>`;
     }
   } else if (panel?.kind === 'deposit') {
     html = `<div class="panel-head"><h3>Gisement (${s.deposits[panel.id]} restant)</h3><button data-act="close">✕</button></div>
@@ -751,6 +774,7 @@ $('game').addEventListener('pointerdown', (ev) => {
       if (panel?.kind === 'slot' && ev.pointerType !== 'mouse' && previewType !== id) { previewByTouch = true; setPreview(id as TowerTypeId); break; }
       if (panel?.kind === 'slot') cmd({ c: 'build', slotId: panel.id, type: id as TowerTypeId }); return select(null);
     case 'upgrade': cmd({ c: 'upgrade', towerId, nodeId: id }); break;
+    case 'rotate': cmd({ c: 'rotate', towerId, facing: Number(id) }); break;
     case 'targeting': cmd({ c: 'targeting', towerId, mode: id as TowerState['targeting'] }); break;
     case 'priority': cmd({ c: 'aiPriority', towerId, priority: id as TowerState['aiPriority'] }); break;
     case 'orderRepair': cmd({ c: 'aiOrder', kind: 'repair', targetId: towerId }); break;

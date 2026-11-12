@@ -142,6 +142,6 @@ export function decideHeroTask(game: Game): HeroTask | null {
   }
 
   // 8. Rien d'urgent : on rapporte ce qu'on a, puis on attend près de la base.
-  if (hero.carry > 0 || hpFrac < 1 || !atBase) return { kind: 'deliver' };
+  if (hero.carry > 0 || hpFrac < 1 || (!atBase && !game.state.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff))) return { kind: 'deliver' };
   return { kind: 'idle' };
 }

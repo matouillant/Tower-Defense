@@ -26,7 +26,7 @@ import { RANGE_UPGRADE, rangeUpgradeCost, TOWERS } from '../config/towers';
 import type { GameMap, Vec2 } from '../map/types';
 import { Rng } from '../rng';
 import { decideHeroTask } from './ai';
-import { baseTowerStats, dist, effectiveTowerStats, heroStats, towerMaxHp } from './stats';
+import { baseTowerStats, bestFacing, dist, inShape, effectiveTowerStats, heroStats, towerMaxHp } from './stats';
 import type {
   Command,
   EnemyState,
@@ -447,8 +447,7 @@ export class Game {
       let score = -Infinity;
       for (const e of s.enemies) {
         if (e.hp <= 0) continue;
-        const d = dist(t.x, t.y, e.x, e.y);
-        if (d > stats.range || d < stats.minRange) continue;
+        if (!inShape(stats, t.facing, t.x, t.y, e.x, e.y)) continue;
         const v =
           t.targeting === 'first' ? e.d - this.map.paths[e.pathIdx].length
           : t.targeting === 'strong' ? e.hp + e.shield
@@ -489,7 +488,7 @@ export class Game {
         }
         this.damageEnemy(e, amount, stats.pierceShield);
       };
-      const victims = stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
+      const victims = stats.shape === 'line' ? s.enemies.filter((e) => e.hp > 0 && inShape(stats, t.facing, t.x, t.y, e.x, e.y)) : stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
       for (const e of victims) strike(e, damage);
       // Foudre : l'éclair rebondit de proche en proche sur des ennemis encore intacts, en perdant de la puissance.
       let chain: number[] | undefined;
@@ -642,6 +641,21 @@ export class Game {
     return dist(hero.x, hero.y, tx, ty) <= stop;
   }
 
+  /** Point de dépôt le plus proche du héros : la base ou un dépôt avancé en état de marche. */
+  nearestDrop(x: number, y: number): { x: number; y: number } {
+    let best: { x: number; y: number } = this.map.base;
+    let bd = dist(x, y, best.x, best.y);
+    for (const t of this.state.towers) {
+      if (t.hp <= 0 || !TOWERS[t.type].base.dropOff) continue;
+      const d = dist(x, y, t.x, t.y);
+      if (d < bd) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
   private updateHero(dt: number) {
     const s = this.state;
     const hero = s.hero;
@@ -672,6 +686,10 @@ export class Game {
       s.scrap += hero.carry;
       hero.carry = 0;
       hero.hp = Math.min(stats.maxHp, hero.hp + HERO_CONFIG.baseRegen * dt);
+    } else if (hero.carry > 0 && s.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff && dist(hero.x, hero.y, t.x, t.y) <= HERO_CONFIG.baseRadius)) {
+      // Dépôt avancé : on y décharge sans retourner à la base (les soins restent réservés à la base).
+      s.scrap += hero.carry;
+      hero.carry = 0;
     }
     // Ramassage automatique au passage.
     for (const p of s.pickups) {
@@ -690,9 +708,13 @@ export class Game {
       case 'move':
         if (this.moveHero(task.x, task.y, 0.05, dt) || !this.isWalkable(task.x, task.y)) done();
         break;
-      case 'deliver':
-        if (this.moveHero(base.x, base.y, 0.5, dt) && hero.carry === 0 && hero.hp >= stats.maxHp) done();
+      case 'deliver': {
+        // Chargé : on file au point de dépôt le plus proche (base ou dépôt avancé). Une fois vide et en forme, on s'arrête là.
+        if (hero.carry === 0 && hero.hp >= stats.maxHp) return done();
+        const drop = hero.carry > 0 ? this.nearestDrop(hero.x, hero.y) : base;
+        this.moveHero(drop.x, drop.y, 0.5, dt);
         break;
+      }
       case 'collect': {
         const p = s.pickups.find((q) => q.id === task.pickupId);
         if (!p || p.value <= 0 || hero.carry >= stats.carryCap) done();
@@ -858,7 +880,7 @@ export class Game {
         if (s.towers.some((t) => t.slotId === slot.id)) return 'Emplacement occupé.';
         if (!pay(def.cost)) return poor;
         s.towers.push({
-          id: this.nextId++, type: def.id, slotId: slot.id, x: slot.x, y: slot.y, hp: def.base.maxHp, maxHpFactor: 1, path: [], rangeLvl: 0,
+          id: this.nextId++, type: def.id, slotId: slot.id, x: slot.x, y: slot.y, hp: def.base.maxHp, maxHpFactor: 1, path: [], rangeLvl: 0, facing: bestFacing(this.map, def.base, slot.x, slot.y, slot.high),
           invested: def.cost, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0, focusId: 0, focus: 0,
         });
         return null;
@@ -915,7 +937,15 @@ export class Game {
         t.slotId = slot.id;
         t.x = slot.x;
         t.y = slot.y;
+        t.facing = bestFacing(this.map, baseTowerStats(t), slot.x, slot.y, slot.high);
         t.disabledFor = G.moveDisable;
+        return null;
+      }
+      case 'rotate': {
+        const t = tower(cmd.towerId);
+        if (!t) return 'Tour introuvable.';
+        if (!Number.isInteger(cmd.facing) || cmd.facing < 0 || cmd.facing > 7) return 'Orientation invalide.';
+        t.facing = cmd.facing;
         return null;
       }
       case 'targeting': {

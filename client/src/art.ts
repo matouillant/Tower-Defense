@@ -17,6 +17,7 @@ import reine from './art/reine.svg';
 import rock from './art/rock.svg';
 import runner from './art/runner.svg';
 import artilleur from './art/artilleur.svg';
+import depot from './art/depot.svg';
 import blinde from './art/blinde.svg';
 import essaim from './art/essaim.svg';
 import foudre from './art/foudre.svg';
@@ -59,9 +60,10 @@ export const ART: Record<string, { url: string; size: number }> = {
   laser_base: { url: laser_base, size: 192 },
   laser_head: { url: laser_head, size: 192 },
   relais: { url: relais, size: 192 },
+  depot: { url: depot, size: 192 },
 };
 
 /** Tours sans tête pivotante : une seule image, qui pulse doucement. */
-export const HEADLESS_TOWERS = new Set(['givre', 'foudre', 'relais']);
+export const HEADLESS_TOWERS = new Set(['givre', 'foudre', 'relais', 'depot']);
 /** Image de la tour dans les menus. */
 export const towerIcon = (id: string) => ART[HEADLESS_TOWERS.has(id) ? id : `${id}_head`].url;

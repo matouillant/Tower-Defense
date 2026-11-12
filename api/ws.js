@@ -4101,6 +4101,10 @@ var base = (s) => ({
   auraReach: 0,
   auraHeal: 0,
   income: 0,
+  shape: "circle",
+  beamWidth: 0.6,
+  coneHalf: 0.8,
+  dropOff: false,
   ...s
 });
 var TOWERS = {
@@ -4134,9 +4138,9 @@ var TOWERS = {
   givre: {
     id: "givre",
     name: "\xC9metteur cryo",
-    desc: "Ralentit les ennemis, peu de d\xE9g\xE2ts.",
+    desc: "Souffle un c\xF4ne de froid : ralentit les ennemis, peu de d\xE9g\xE2ts.",
     cost: 60,
-    base: base({ maxHp: 90, damage: 4, range: 2.8, cooldown: 1.1, slow: 0.3, slowDuration: 1.5 }),
+    base: base({ maxHp: 90, damage: 4, range: 3.4, cooldown: 1.1, slow: 0.3, slowDuration: 1.5, shape: "cone", coneHalf: 0.8 }),
     nodes: [
       { id: "blizzard", name: "Blizzard", desc: "Ralentit toute une zone.", cost: 70, parent: null, stats: { splash: 1.5, slow: 0.35, slowDuration: 2 } },
       { id: "glace-vive", name: "Glace vive", desc: "Ralentissement fort sur une cible, avec des d\xE9g\xE2ts.", cost: 70, parent: null, stats: { damage: 22, slow: 0.55, slowDuration: 2.5 } },
@@ -4158,9 +4162,9 @@ var TOWERS = {
   baliste: {
     id: "baliste",
     name: "Canon \xE0 rails",
-    desc: "Tr\xE8s puissante, mais \xE0 munitions limit\xE9es : le h\xE9ros doit la recharger.",
+    desc: "Tire en ligne droite et transperce tout ce qui s\u2019y trouve ; munitions limit\xE9es, le h\xE9ros doit la recharger.",
     cost: 80,
-    base: base({ maxHp: 100, damage: 55, range: 4.5, cooldown: 1.5, ammo: 24 }),
+    base: base({ maxHp: 100, damage: 55, range: 5, cooldown: 1.5, ammo: 24, shape: "line", beamWidth: 0.6 }),
     nodes: [
       { id: "lourde", name: "Lourde", desc: "D\xE9g\xE2ts doubl\xE9s, moins de munitions.", cost: 80, parent: null, stats: { damage: 120, ammo: 14, cooldown: 2 } },
       { id: "repetition", name: "\xC0 r\xE9p\xE9tition", desc: "Tir rapide, grande r\xE9serve.", cost: 80, parent: null, stats: { damage: 40, cooldown: 0.7, ammo: 50 } },
@@ -4243,6 +4247,14 @@ var TOWERS = {
       { id: "regeneration", name: "R\xE9g\xE9n\xE9ration totale", desc: "R\xE9pare 22 PV/s : le h\xE9ros respire enfin.", cost: 170, parent: "nano-forge", stats: { auraHeal: 22, auraRadius: 3, auraDamage: 0.1 } },
       { id: "complexe", name: "Complexe industriel", desc: "Production \xE9norme. \xC0 prot\xE9ger \xE0 tout prix.", cost: 170, parent: "raffinerie", stats: { income: 1.7, maxHp: 90, repairCostMult: 1.5 } }
     ]
+  },
+  depot: {
+    id: "depot",
+    name: "D\xE9p\xF4t avanc\xE9",
+    desc: "Le h\xE9ros y d\xE9pose ses ressources sans retourner \xE0 la base. Ne tire pas.",
+    cost: 70,
+    base: base({ maxHp: 90, damage: 0, range: 0, cooldown: 1, dropOff: true }),
+    nodes: []
   }
 };
 var SYNERGY_RANGE = 1.5;
@@ -4414,6 +4426,33 @@ var isValidCode = (code) => code.length === CODE_LENGTH && [...code].every((ch) 
 
 // shared/src/sim/stats.ts
 var dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+var facingAngle = (facing) => facing * Math.PI / 4;
+function inShape(stats, facing, tx, ty, ex, ey) {
+  const dx = ex - tx;
+  const dy = ey - ty;
+  const d = Math.hypot(dx, dy);
+  if (d > stats.range || d < stats.minRange) return false;
+  if (stats.shape === "circle") return true;
+  const a = facingAngle(facing);
+  const fwd = dx * Math.cos(a) + dy * Math.sin(a);
+  if (stats.shape === "line") return fwd >= 0 && Math.abs(-dx * Math.sin(a) + dy * Math.cos(a)) <= stats.beamWidth;
+  return d < 1e-6 || Math.acos(Math.max(-1, Math.min(1, fwd / d))) <= stats.coneHalf;
+}
+function bestFacing(map, stats, x, y, high) {
+  if (stats.shape === "circle") return 0;
+  const st = { ...stats, range: stats.range * (high ? 1 + MAP_CONFIG.highGroundRangeBonus : 1) };
+  let best = 0;
+  let bestN = -1;
+  for (let f = 0; f < 8; f++) {
+    let n = 0;
+    for (const path of map.paths) for (const p of path) if (inShape(st, f, x, y, p.x, p.y)) n++;
+    if (n > bestN) {
+      bestN = n;
+      best = f;
+    }
+  }
+  return best;
+}
 function baseTowerStats(tower) {
   const def = TOWERS[tower.type];
   let stats = { ...def.base };
@@ -4585,7 +4624,7 @@ function decideHeroTask(game) {
       if (best) return { kind: "harvest", depositId: best.id };
     }
   }
-  if (hero.carry > 0 || hpFrac < 1 || !atBase) return { kind: "deliver" };
+  if (hero.carry > 0 || hpFrac < 1 || !atBase && !game.state.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff)) return { kind: "deliver" };
   return { kind: "idle" };
 }
 
@@ -4949,8 +4988,7 @@ var Game = class {
       let score = -Infinity;
       for (const e of s.enemies) {
         if (e.hp <= 0) continue;
-        const d = dist(t.x, t.y, e.x, e.y);
-        if (d > stats.range || d < stats.minRange) continue;
+        if (!inShape(stats, t.facing, t.x, t.y, e.x, e.y)) continue;
         const v = t.targeting === "first" ? e.d - this.map.paths[e.pathIdx].length : t.targeting === "strong" ? e.hp + e.shield : t.targeting === "weak" ? -(e.hp + e.shield) : ENEMIES[e.type].speed * 1e3 + e.d;
         if (v > score) {
           score = v;
@@ -4986,7 +5024,7 @@ var Game = class {
         }
         this.damageEnemy(e, amount, stats.pierceShield);
       };
-      const victims = stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
+      const victims = stats.shape === "line" ? s.enemies.filter((e) => e.hp > 0 && inShape(stats, t.facing, t.x, t.y, e.x, e.y)) : stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
       for (const e of victims) strike(e, damage);
       let chain;
       if (stats.chain > 0) {
@@ -5127,6 +5165,20 @@ var Game = class {
     }
     return dist(hero.x, hero.y, tx, ty) <= stop;
   }
+  /** Point de dépôt le plus proche du héros : la base ou un dépôt avancé en état de marche. */
+  nearestDrop(x, y) {
+    let best = this.map.base;
+    let bd = dist(x, y, best.x, best.y);
+    for (const t of this.state.towers) {
+      if (t.hp <= 0 || !TOWERS[t.type].base.dropOff) continue;
+      const d = dist(x, y, t.x, t.y);
+      if (d < bd) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
   updateHero(dt) {
     const s = this.state;
     const hero = s.hero;
@@ -5155,6 +5207,9 @@ var Game = class {
       s.scrap += hero.carry;
       hero.carry = 0;
       hero.hp = Math.min(stats.maxHp, hero.hp + HERO_CONFIG.baseRegen * dt);
+    } else if (hero.carry > 0 && s.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff && dist(hero.x, hero.y, t.x, t.y) <= HERO_CONFIG.baseRadius)) {
+      s.scrap += hero.carry;
+      hero.carry = 0;
     }
     for (const p of s.pickups) {
       if (hero.carry >= stats.carryCap) break;
@@ -5171,9 +5226,12 @@ var Game = class {
       case "move":
         if (this.moveHero(task.x, task.y, 0.05, dt) || !this.isWalkable(task.x, task.y)) done();
         break;
-      case "deliver":
-        if (this.moveHero(base2.x, base2.y, 0.5, dt) && hero.carry === 0 && hero.hp >= stats.maxHp) done();
+      case "deliver": {
+        if (hero.carry === 0 && hero.hp >= stats.maxHp) return done();
+        const drop = hero.carry > 0 ? this.nearestDrop(hero.x, hero.y) : base2;
+        this.moveHero(drop.x, drop.y, 0.5, dt);
         break;
+      }
       case "collect": {
         const p = s.pickups.find((q) => q.id === task.pickupId);
         if (!p || p.value <= 0 || hero.carry >= stats.carryCap) done();
@@ -5342,6 +5400,7 @@ var Game = class {
           maxHpFactor: 1,
           path: [],
           rangeLvl: 0,
+          facing: bestFacing(this.map, def.base, slot.x, slot.y, slot.high),
           invested: def.cost,
           cooldown: 0,
           ammo: def.base.ammo || -1,
@@ -5406,7 +5465,15 @@ var Game = class {
         t.slotId = slot.id;
         t.x = slot.x;
         t.y = slot.y;
+        t.facing = bestFacing(this.map, baseTowerStats(t), slot.x, slot.y, slot.high);
         t.disabledFor = GAME_CONFIG.moveDisable;
+        return null;
+      }
+      case "rotate": {
+        const t = tower(cmd.towerId);
+        if (!t) return "Tour introuvable.";
+        if (!Number.isInteger(cmd.facing) || cmd.facing < 0 || cmd.facing > 7) return "Orientation invalide.";
+        t.facing = cmd.facing;
         return null;
       }
       case "targeting": {

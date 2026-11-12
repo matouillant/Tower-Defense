@@ -263,3 +263,9 @@ button.on { background: linear-gradient(#5cecff, #1aa6d6); border-color: #c9f8ff
 
 button.build.previewing { border-color: var(--neon); box-shadow: 0 0 0 2px var(--neon), 0 0 14px #35e0ff66; }
 .again { color: #ffd84a; }
+
+/* ---- Grand écran : panneau latéral, rangé du côté opposé à la cible sélectionnée ---- */
+@media (min-width: 901px) and (min-height: 521px) {
+  #panel { left: auto; right: 8px; top: 52px; bottom: 70px; width: 380px; max-width: none; max-height: none; margin: 0; }
+  #panel[data-side=left] { right: auto; left: 8px; }
+}

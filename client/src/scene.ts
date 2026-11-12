@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ABILITIES, AbilityId, ENEMIES, MAP_CONFIG, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
+import { ABILITIES, AbilityId, ENEMIES, MAP_CONFIG, TOWERS, bestFacing, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
 import { ART, HEADLESS_TOWERS } from './art';
 
 export const TILE = 48;
@@ -16,7 +16,7 @@ export type Tap =
   | { kind: 'ground'; x: number; y: number };
 
 const INK = 0x2a2344;
-const SHOT_COLOR: Record<TowerTypeId, number> = { canon: 0xff7a5c, givre: 0x5ad7ff, baliste: 0xffa63d, foudre: 0xc9a2ff, laser: 0xff4d8d, relais: 0x7dffc0 };
+const SHOT_COLOR: Record<TowerTypeId, number> = { canon: 0xff7a5c, givre: 0x5ad7ff, baliste: 0xffa63d, foudre: 0xc9a2ff, laser: 0xff4d8d, relais: 0x7dffc0, depot: 0xffc93c };
 /** Hauteur de la tête d'une tourelle au-dessus du centre de sa case, en cases. */
 /** Vue de dessus : la tête de la tourelle est centrée sur son socle. */
 const HEAD_LIFT = 0;
@@ -73,7 +73,7 @@ export class GameScene extends Phaser.Scene {
   selectedTower: number | null = null;
   selectedSlot: number | null = null;
   /** Aperçu de portée (en cases) d'une tour qu'on envisage de poser sur l'emplacement sélectionné. */
-  previewRange: { range: number; aura: boolean } | null = null;
+  previewType: TowerTypeId | null = null;
   /** Compétence de zone armée : le prochain appui sur la carte la lance. */
   armed: AbilityId | null = null;
   /** La caméra suit le héros (pour le joueur qui le contrôle), sauf juste après un glissement. */
@@ -399,6 +399,45 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Barre arrondie avec contour épais. */
+  /** Zone de tir : cercle, ligne droite ou cône, avec un liseré sombre pour rester lisible sur tous les terrains. */
+  private drawZone(g: Phaser.GameObjects.Graphics, x: number, y: number, st: { shape: string; range: number; minRange: number; beamWidth: number; coneHalf: number }, facing: number, color: number) {
+    const R = st.range * TILE;
+    const a = (facing * Math.PI) / 4;
+    const path = () => {
+      g.beginPath();
+      if (st.shape === 'line') {
+        const w = st.beamWidth * TILE;
+        const c = Math.cos(a);
+        const s = Math.sin(a);
+        const pt = (f: number, l: number) => [x + f * c - l * s, y + f * s + l * c] as const;
+        const m0 = st.minRange * TILE;
+        const pts = [pt(m0, -w), pt(R, -w), pt(R, w), pt(m0, w)];
+        g.moveTo(pts[0][0], pts[0][1]);
+        for (const p of pts.slice(1)) g.lineTo(p[0], p[1]);
+      } else if (st.shape === 'cone') {
+        g.moveTo(x, y);
+        g.arc(x, y, R, a - st.coneHalf, a + st.coneHalf, false);
+      } else {
+        g.arc(x, y, R, 0, Math.PI * 2, false);
+      }
+      g.closePath();
+    };
+    path();
+    g.fillStyle(color, 0.2).fillPath();
+    path();
+    g.lineStyle(7, INK, 0.75).strokePath();
+    path();
+    g.lineStyle(3.5, color, 1).strokePath();
+    if (st.minRange > 0 && st.shape === 'circle') g.lineStyle(2, 0xff5d5d, 0.8).strokeCircle(x, y, st.minRange * TILE);
+    if (st.shape !== 'circle') {
+      // Flèche d'orientation.
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const tip = TILE * 0.95;
+      g.fillStyle(color, 1).fillTriangle(x + c * tip, y + s * tip, x + c * (tip - 11) - s * 7, y + s * (tip - 11) + c * 7, x + c * (tip - 11) + s * 7, y + s * (tip - 11) - c * 7);
+    }
+  }
+
   private bar(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, frac: number, color: number) {
     g.fillStyle(INK).fillRoundedRect(x - w / 2 - 2, y - 2, w + 4, h + 4, (h + 4) / 2);
     const fw = Math.max(0, Math.min(1, frac)) * w;
@@ -451,20 +490,18 @@ export class GameScene extends Phaser.Scene {
         const r = 25 + Math.sin(t * 6) * 2;
         g.lineStyle(6, INK).strokeCircle(px(sl.x), px(sl.y), r);
         g.lineStyle(3, 0xffffff).strokeCircle(px(sl.x), px(sl.y), r);
-        if (this.previewRange) {
-          const pr = this.previewRange.range * (sl.high ? 1 + MAP_CONFIG.highGroundRangeBonus : 1) * TILE;
-          const col = this.previewRange.aura ? 0x7dffc0 : 0xffffff;
-          g.fillStyle(col, 0.16).fillCircle(px(sl.x), px(sl.y), pr);
-          g.lineStyle(3, col, 0.95).strokeCircle(px(sl.x), px(sl.y), pr);
+        if (this.previewType) {
+          const pst = TOWERS[this.previewType].base;
+          const st = { ...pst, range: pst.range * (sl.high ? 1 + MAP_CONFIG.highGroundRangeBonus : 1) };
+          if (st.range > 0) this.drawZone(g, px(sl.x), px(sl.y), st, bestFacing(this.map, pst, sl.x, sl.y, sl.high), 0xffffff);
+          else if (st.auraRadius > 0) this.drawZone(g, px(sl.x), px(sl.y), { ...st, shape: 'circle', range: st.auraRadius }, 0, 0x7dffc0);
         }
       }
     }
     const sel = s.towers.find((q) => q.id === this.selectedTower);
     if (sel) {
       const st = effectiveTowerStats(sel, s.towers, this.map);
-      g.fillStyle(0xffffff, 0.14).fillCircle(px(sel.x), px(sel.y), st.range * TILE);
-      g.lineStyle(3, 0xffffff, 0.9).strokeCircle(px(sel.x), px(sel.y), st.range * TILE);
-      if (st.minRange > 0) g.lineStyle(2, 0xff5d5d, 0.8).strokeCircle(px(sel.x), px(sel.y), st.minRange * TILE);
+      if (st.range > 0) this.drawZone(g, px(sel.x), px(sel.y), st, sel.facing, 0xffffff);
       // Relais : zone d'effet de l'aura, et les tours qu'elle touche.
       const aura = baseTowerStats(sel).auraRadius;
       if (aura > 0) {

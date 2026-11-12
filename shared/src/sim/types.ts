@@ -21,6 +21,8 @@ export interface TowerState {
   path: string[];
   /** Niveau de l'amélioration de portée (0 à RANGE_UPGRADE.maxLevel). */
   rangeLvl: number;
+  /** Orientation (0 à 7, par pas de 45°, 0 = vers la droite, sens horaire) : utile aux tours à zone de tir non circulaire. */
+  facing: number;
   /** Total dépensé dans la tour (construction + améliorations). */
   invested: number;
   cooldown: number;
@@ -163,6 +165,7 @@ export type StrategistCommand =
   | { c: 'sell'; towerId: number }
   | { c: 'moveTower'; towerId: number; slotId: number }
   | { c: 'targeting'; towerId: number; mode: Targeting }
+  | { c: 'rotate'; towerId: number; facing: number }
   | { c: 'ability'; id: AbilityId; x?: number; y?: number; towerId?: number }
   | { c: 'aiSettings'; settings: Partial<AiSettings> }
   | { c: 'aiPriority'; towerId: number; priority: AiPriority }

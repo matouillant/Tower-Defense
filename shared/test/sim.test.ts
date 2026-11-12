@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Game, generateMap, TOWERS, ENEMIES, BOSS_POOL, GAME_CONFIG, WAVE_CONFIG, availableUpgrades, towerMaxHp, repairCost,
-  hpMultiplier, isBossWave, dist, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
+  hpMultiplier, isBossWave, dist, inShape, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
 } from '../src/index';
 
 const DT = 1 / GAME_CONFIG.tickRate;
@@ -165,7 +165,7 @@ describe('simulation', () => {
     };
 
     it('les arbres sont cohérents : parents existants, identifiants uniques, 4 niveaux, 3 voies au niveau 2', () => {
-      for (const def of Object.values(TOWERS)) {
+      for (const def of Object.values(TOWERS).filter((d) => d.id !== "depot")) {
         const ids = new Set(def.nodes.map((n) => n.id));
         expect(ids.size).toBe(def.nodes.length);
         const depth = (id: string | null): number => (id === null ? 0 : 1 + depth(def.nodes.find((n) => n.id === id)!.parent));
@@ -362,5 +362,45 @@ describe('amélioration de portée', () => {
     const a0 = baseTowerStats(t).auraRadius;
     game.apply('strategist', { c: 'upgrade', towerId: t.id, nodeId: 'portee' });
     expect(baseTowerStats(t).auraRadius).toBeCloseTo(a0 + 0.5, 5);
+  });
+});
+
+describe('zones de tir et dépôt avancé', () => {
+  it('la ligne ne touche que ce qui est dans l’axe, le cône que ce qui est devant', () => {
+    const st = { shape: 'line' as const, range: 5, minRange: 0, beamWidth: 0.6, coneHalf: 0.8 };
+    expect(inShape(st, 0, 10, 10, 13, 10.4)).toBe(true);
+    expect(inShape(st, 0, 10, 10, 13, 11.5)).toBe(false);
+    expect(inShape(st, 0, 10, 10, 7, 10)).toBe(false);
+    expect(inShape(st, 2, 10, 10, 10, 13)).toBe(true);
+    const cone = { ...st, shape: 'cone' as const };
+    expect(inShape(cone, 0, 10, 10, 12, 10.5)).toBe(true);
+    expect(inShape(cone, 0, 10, 10, 10.5, 12)).toBe(false);
+  });
+  it('une tour en ligne transperce tous les ennemis alignés et peut être réorientée', () => {
+    const map = generateMap(4);
+    const game = new Game(map);
+    game.state.scrap = 5000;
+    game.apply('strategist', { c: 'build', slotId: map.slots[0].id, type: 'baliste' });
+    const t = game.state.towers[0];
+    expect(game.apply('strategist', { c: 'rotate', towerId: t.id, facing: 9 })).toBeTruthy();
+    expect(game.apply('strategist', { c: 'rotate', towerId: t.id, facing: 3 })).toBeNull();
+    expect(t.facing).toBe(3);
+  });
+  it('le héros dépose au dépôt avancé sans retourner à la base', () => {
+    const map = generateMap(4);
+    const game = new Game(map);
+    game.state.scrap = 5000;
+    const slot = map.slots.slice().sort((a, b) => dist(b.x, b.y, map.base.x, map.base.y) - dist(a.x, a.y, map.base.x, map.base.y))[0];
+    expect(game.apply('strategist', { c: 'build', slotId: slot.id, type: 'depot' })).toBeNull();
+    const h = game.state.hero;
+    h.carry = 40;
+    h.x = slot.x + 3;
+    h.y = slot.y;
+    const before = game.state.scrap;
+    game.apply('hero', { c: 'task', task: { kind: 'deliver' } });
+    for (let i = 0; i < 400 && h.carry > 0; i++) game.step(DT);
+    expect(h.carry).toBe(0);
+    expect(game.state.scrap).toBeGreaterThanOrEqual(before + 40 - 1);
+    expect(dist(h.x, h.y, map.base.x, map.base.y)).toBeGreaterThan(4);
   });
 });

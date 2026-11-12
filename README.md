@@ -8,7 +8,9 @@ Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur e
 - **Héros-réparateur** : répare, ramasse, récolte, recharge, recycle. Joué par un humain **ou par l'IA**.
 - **Une seule ressource** pour construire, améliorer et réparer.
 - **Cartes aléatoires** à partir d'une seed, **vagues infinies**, un boss toutes les 10 vagues.
-- **6 tourelles** (Canon, Givre, Baliste, Bobine Tesla, Rayon focalisé, Relais tactique), chacune avec un arbre d'amélioration à 4 niveaux et des voies exclusives ; le bouton « Voir l'arbre » les détaille.
+- **6 tourelles** (Canon, Givre, Baliste, Bobine Tesla, Rayon focalisé, Relais tactique) + le Dépôt avancé, chacune avec un arbre d'amélioration à 4 niveaux et des voies exclusives ; le bouton « Voir l'arbre » les détaille.
+- **Zones de tir variées** : circulaire, en ligne (le Canon à rails transperce tout l'axe) ou en cône (Émetteur cryo), orientables ; la zone s'affiche au clic sur une tour et avant la pose.
+- **Dépôt avancé** : bâtiment où le héros décharge ses ressources sans retourner à la base.
 - **13 types d'ennemis** variés en vitesse, taille, blindage et attaque (essaim, artilleur qui s'arrête pour tirer, sapeur kamikaze, soigneur, blindé, golem…) et 3 boss.
 - **Menu de partie** : rejouer (nouvelle carte ou même carte), quitter vers l'accueil, plein écran (touche F).
 - **Code de partie** à 5 caractères : on rejoint avant le lancement, ou en cours de partie pour remplacer l'IA.
