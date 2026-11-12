@@ -4410,6 +4410,8 @@ var REWARDS = {
   renfort: { name: "Renfort", desc: "Efface l\u2019usure de toutes les tours." },
   tactique: { name: "Tactique", desc: "Comp\xE9tences recharg\xE9es 15 % plus vite, d\xE9finitivement." }
 };
+var WAVE_END_BONUS = { base: 40, perWave: 12 };
+var waveEndBonus = (wave) => WAVE_END_BONUS.base + WAVE_END_BONUS.perWave * wave;
 var REWARD_SCRAP_BASE = 150;
 var REWARD_SCRAP_PER_WAVE = 10;
 
@@ -4595,7 +4597,9 @@ function decideHeroTask(game) {
     return max > 0 && t.hp > 0 && t.aiPriority !== "sacrifice" && t.ammo <= max * 0.2 && s.scrap >= TOWERS[t.type].cost * GAME_CONFIG.reloadCostRatio;
   });
   if (empty && !(inWave && enemyNear(empty.x, empty.y, posture.avoidEnemies))) return { kind: "reload", towerId: empty.id };
-  if (hero.carry >= stats.carryCap * 0.7) return { kind: "deliver" };
+  const drop = game.nearestDrop(hero.x, hero.y);
+  const depotClose = drop !== game.map.base && dist(hero.x, hero.y, drop.x, drop.y) <= 5;
+  if (hero.carry >= stats.carryCap * (depotClose ? 0.3 : 0.7)) return { kind: "deliver" };
   if (hero.carry < stats.carryCap) {
     let best = null;
     for (const p of s.pickups) {
@@ -4608,7 +4612,7 @@ function decideHeroTask(game) {
   }
   if (!inWave) {
     const timeLeft = s.phaseTimer;
-    const backHome = (x, y) => (steps(x, y) + Math.abs(x - game.map.base.x) + Math.abs(y - game.map.base.y)) / stats.speed;
+    const backHome = (x, y) => (steps(x, y) + Math.abs(x - game.nearestDrop(x, y).x) + Math.abs(y - game.nearestDrop(x, y).y)) / stats.speed;
     if (posture.prospect && hpFrac > 0.6) {
       const zone = game.map.prospectZones.find((z) => s.prospects[z.id] <= s.wave && backHome(z.x, z.y) + GAME_CONFIG.prospectTime + 2 < timeLeft);
       if (zone || hero.task.kind === "prospect") return zone ? { kind: "prospect", zoneId: zone.id } : null;
@@ -4754,6 +4758,9 @@ var Game = class {
     const s = this.state;
     s.phase = "inter";
     s.phaseTimer = GAME_CONFIG.interDuration;
+    const bonus = waveEndBonus(s.wave);
+    s.scrap += bonus;
+    this.emit({ t: "income", amount: bonus, wave: s.wave });
     s.deposits = s.deposits.map((d) => Math.min(GAME_CONFIG.depositStock, d + GAME_CONFIG.depositRegenPerWave));
     if (isBossWave(s.wave)) {
       const ids = this.rng.shuffle(Object.keys(REWARDS));
@@ -5583,7 +5590,7 @@ var Room = class {
   game = null;
   /** Jeton du joueur qui tient chaque rôle (connecté ou en cours de reconnexion). */
   slots = { strategist: null, hero: null };
-  tickCount = 0;
+  sinceState = 0;
   /** Temps de jeu en attente : la simulation avance toujours par pas fixes, quelle que soit la vitesse. */
   pending = 0;
   /** Joueur qui a mis la partie en pause (null = elle tourne). */
@@ -5789,16 +5796,22 @@ var Room = class {
     }
     this.emptySince = 0;
     if (!this.game) return;
+    const step = 1 / GAME_CONFIG.tickRate;
     if (!this.pausedBy) {
       this.pending += dt * this.speed * GAME_CONFIG.gameSpeed;
-      for (let i = 0; this.pending >= dt - 1e-9 && i < 8; i++) {
-        this.game.step(dt);
-        this.pending -= dt;
+      let n = 0;
+      while (this.pending >= step - 1e-9 && n < 24) {
+        this.game.step(step);
+        this.pending -= step;
+        n++;
       }
+      if (this.pending > step * 4) this.pending = 0;
     }
-    this.tickCount++;
-    const every = Math.max(1, Math.round(GAME_CONFIG.tickRate / GAME_CONFIG.snapshotRate));
-    if (this.tickCount % every === 0) this.sendState();
+    this.sinceState += dt;
+    if (this.sinceState >= 1 / GAME_CONFIG.snapshotRate - 1e-9) {
+      this.sinceState = 0;
+      this.sendState();
+    }
   }
   sendState() {
     if (!this.game) return;
@@ -5827,7 +5840,11 @@ var RoomManager = class {
     this.rooms.set(room.code, room);
     return room;
   }
-  tick(now, dt) {
+  lastTick = 0;
+  /** `now` en millisecondes : le temps écoulé réel (plafonné) est transmis aux salons. */
+  tick(now, _dt) {
+    const dt = this.lastTick ? Math.min(0.5, Math.max(0, (now - this.lastTick) / 1e3)) : 1 / GAME_CONFIG.tickRate;
+    this.lastTick = now;
     for (const room of this.rooms.values()) {
       room.tick(now, dt);
       if (room.isExpired(now)) this.rooms.delete(room.code);

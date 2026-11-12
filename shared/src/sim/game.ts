@@ -18,6 +18,7 @@ import {
   OVERCHARGE_SELF_DAMAGE,
   REWARDS,
   REWARD_SCRAP_BASE,
+  waveEndBonus,
   REWARD_SCRAP_PER_WAVE,
   RewardId,
 } from '../config/game';
@@ -193,6 +194,9 @@ export class Game {
     const s = this.state;
     s.phase = 'inter';
     s.phaseTimer = G.interDuration;
+    const bonus = waveEndBonus(s.wave);
+    s.scrap += bonus;
+    this.emit({ t: 'income', amount: bonus, wave: s.wave });
     s.deposits = s.deposits.map((d) => Math.min(G.depositStock, d + G.depositRegenPerWave));
     if (isBossWave(s.wave)) {
       const ids = this.rng.shuffle(Object.keys(REWARDS) as RewardId[]);

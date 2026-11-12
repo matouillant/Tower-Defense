@@ -348,6 +348,7 @@ net.onMessage = (msg: ServerMessage) => {
 function onEvent(e: GameEvent) {
   // Les messages de l'IA ne s'affichent pas en surimpression : ils vont dans la petite bulle du bas de carte.
   if (e.t === 'msg' && e.from === 'jeu') toast(e.text);
+  else if (e.t === 'income') toast(`Vague ${e.wave} terminée : +${e.amount} ressources`);
   else if (e.t === 'wave') toast(e.boss ? `Vague ${e.wave} : un boss approche !` : `Vague ${e.wave}`);
 }
 
@@ -528,15 +529,75 @@ function statBits(st: TowerStats): string[] {
   return bits;
 }
 
+type DeltaDef = [keyof TowerStats, string, (v: number) => string, boolean?];
+const DELTAS: DeltaDef[] = [
+  ['damage', 'Dégâts', fmt], ['range', 'Portée', (v) => v.toFixed(1)], ['cooldown', 'Délai de tir', (v) => `${v.toFixed(2)} s`, true],
+  ['splash', 'Zone', (v) => v.toFixed(1)], ['slow', 'Ralentit', pct], ['dot', 'Brûlure', (v) => `${fmt(v)}/s`], ['chain', 'Rebonds', (v) => String(v)],
+  ['critChance', 'Critiques', pct], ['ammo', 'Munitions', (v) => String(v)], ['maxHp', 'PV', fmt], ['auraDamage', 'Aura dégâts', pct],
+  ['auraRate', 'Aura cadence', pct], ['auraHeal', 'Réparation', (v) => `${fmt(v)}/s`], ['income', 'Revenu', (v) => `${v.toFixed(1)}/s`], ['auraRadius', 'Rayon d’aura', fmt],
+];
+/** Ce que change une amélioration : « Dégâts 55 → 110 », en vert si c'est un gain, en rouge si c'est un prix à payer. */
+function deltaChips(cur: TowerStats, next: TowerStats): string {
+  const out: string[] = [];
+  for (const [k, label, f, lowerBetter] of DELTAS) {
+    const a = cur[k] as number;
+    const b = next[k] as number;
+    if (Math.abs(a - b) < 1e-9) continue;
+    const good = lowerBetter ? b < a : b > a;
+    out.push(`<span class="chip ${good ? 'up' : 'down'}">${label} ${f(a)} → ${f(b)}</span>`);
+  }
+  if (cur.shape !== next.shape) out.push(`<span class="chip up">Zone ${SHAPE_NAME[next.shape]}</span>`);
+  if (cur.pierceShield !== next.pierceShield && next.pierceShield) out.push('<span class="chip up">Perce armures</span>');
+  return out.slice(0, 5).join('');
+}
+
+function statTile(value: string, label: string): string {
+  return `<div class="tile"><b>${value}</b><span>${label}</span></div>`;
+}
+
+function upgradeSection(s: GameState, t: TowerState, def: (typeof TOWERS)[TowerTypeId], st: TowerStats): string {
+  const ups = availableUpgrades(t);
+  const cur = baseTowerStats(t);
+  const level = t.path.length + 1;
+  const card = (id: string, name: string, cost: number, desc: string, chips: string, extra = '') => {
+    const poor = s.scrap < cost;
+    return `<button class="up" data-act="upgrade" data-id="${id}" ${poor ? 'disabled' : ''}>
+      <span class="uphead"><b>${name}</b><em class="${poor ? 'poor' : ''}">${cost}</em></span>
+      <small>${desc}</small><span class="deltas">${chips}</span>${poor ? `<small class="need">Il manque ${Math.ceil(cost - s.scrap)}</small>` : ''}${extra}</button>`;
+  };
+  let html = `<div class="section">Améliorer · niveau ${level}/4 <button class="mini" data-act="tree" data-id="${t.type}">Voir l’arbre</button></div>`;
+  if (ups.length) {
+    html += ups.length > 1 ? `<div class="hint">Choisis une voie : les autres seront fermées pour cette tour.</div>` : '';
+    html += `<div class="ups">${ups.map((n) => card(n.id, n.name, n.cost, n.desc, deltaChips(cur, baseTowerStats({ type: t.type, path: [...t.path, n.id], rangeLvl: t.rangeLvl })))).join('')}</div>`;
+  } else html += `<div class="muted">Arbre terminé.</div>`;
+  if (def.base.range > 0 || def.base.auraRadius > 0) {
+    const lvl = t.rangeLvl;
+    const pips = '●'.repeat(lvl) + '○'.repeat(RANGE_UPGRADE.maxLevel - lvl);
+    const label = def.base.range > 0 ? 'Portée' : 'Rayon d’aura';
+    if (lvl < RANGE_UPGRADE.maxLevel) {
+      const price = rangeUpgradeCost(t.type, lvl);
+      const next = baseTowerStats({ type: t.type, path: t.path, rangeLvl: lvl + 1 });
+      html += `<div class="section">${label} <span class="pips">${pips}</span></div><div class="ups">${card('portee', `${label} +${RANGE_UPGRADE.bonus}`, price, 'Se cumule avec n’importe quelle voie.', deltaChips({ ...cur }, next))}</div>`;
+    } else html += `<div class="section">${label} <span class="pips">${pips}</span></div><div class="muted">Au maximum.</div>`;
+  }
+  void st;
+  return html;
+}
+
 function towerPanel(s: GameState, t: TowerState): string {
   const def = TOWERS[t.type];
   const st = effectiveTowerStats(t, s.towers, map!);
   const max = towerMaxHp(t);
   const names = t.path.map((id) => def.nodes.find((n) => n.id === id)?.name ?? id);
   const ammoMax = baseTowerStats(t).ammo;
-  let html = `<div class="panel-head"><h3>${def.name}${names.length ? ' › ' + names.join(' › ') : ''}</h3><button data-act="close">✕</button></div>
-    <div>PV ${Math.ceil(t.hp)}/${Math.ceil(max)}${t.maxHpFactor < 1 ? ` <span class="muted">(usure ${pct(1 - t.maxHpFactor)})</span>` : ''}
-    · ${statBits(st).join(' · ')}${ammoMax > 0 ? ` · munitions ${t.ammo}/${ammoMax}` : ''}</div>`;
+  const bits = statBits(st);
+  const tiles = [statTile(`${Math.ceil(t.hp)}/${Math.ceil(max)}`, t.maxHpFactor < 1 ? `PV (usure ${pct(1 - t.maxHpFactor)})` : 'PV')];
+  if (st.damage > 0) tiles.push(statTile(fmt(st.damage), 'dégâts'), statTile(st.range.toFixed(1), `portée ${SHAPE_NAME[st.shape]}`), statTile((1 / st.cooldown).toFixed(1), 'tirs / s'));
+  if (ammoMax > 0) tiles.push(statTile(`${t.ammo}/${ammoMax}`, 'munitions'));
+  let html = `<div class="panel-head"><h3>${def.name} <span class="pips">${'●'.repeat(t.path.length + 1)}${'○'.repeat(3 - t.path.length)}</span></h3><button data-act="close">✕</button></div>
+    ${names.length ? `<div class="crumbs">${names.join(' › ')}</div>` : ''}
+    <div class="tiles">${tiles.join('')}</div>
+    <div class="muted small">${(st.damage > 0 ? bits.slice(3) : bits).join(' · ')}</div>`;
 
   if (role === 'hero') {
     const cap = s.phase === 'wave' ? max * G.quickRepairCap : max;
@@ -557,16 +618,7 @@ function towerPanel(s: GameState, t: TowerState): string {
       <button data-act="move">Déplacer (-${Math.ceil(t.invested * G.moveCostRatio)})</button></div>`;
     return html;
   }
-  html += `<div class="section">Améliorations (une seule voie possible) <button class="mini" data-act="tree" data-id="${t.type}">Voir l’arbre</button></div>`;
-  const rangeLeft = t.rangeLvl < RANGE_UPGRADE.maxLevel;
-  const rangeBtn = (def.base.range > 0 || def.base.auraRadius > 0)
-    ? rangeLeft
-      ? `<button data-act="upgrade" data-id="portee" ${s.scrap < rangeUpgradeCost(t.type, t.rangeLvl) ? 'disabled' : ''}><b>${def.base.range > 0 ? 'Portée' : 'Rayon d’aura'} +${RANGE_UPGRADE.bonus}</b> · ${rangeUpgradeCost(t.type, t.rangeLvl)}<small>Niveau ${t.rangeLvl}/${RANGE_UPGRADE.maxLevel}, cumulable avec toute voie.</small></button>`
-      : `<button disabled><b>Portée au maximum</b><small>Niveau ${t.rangeLvl}/${RANGE_UPGRADE.maxLevel}</small></button>`
-    : '';
-  html += ups.length || rangeBtn
-    ? `<div class="grid">${rangeBtn}${ups.map((n) => `<button data-act="upgrade" data-id="${n.id}" ${s.scrap < n.cost ? 'disabled' : ''}><b>${n.name}</b> · ${n.cost}<small>${n.desc}</small></button>`).join('')}</div>`
-    : `<div class="muted">Arbre terminé.</div>`;
+  html += upgradeSection(s, t, def, st);
   if (st.shape !== 'circle' && st.range > 0) {
     html += `<div class="section">Orientation ${st.shape === 'line' ? '(le tir suit cet axe)' : '(le cône vise cette direction)'}</div><div class="chips">
       <button data-act="rotate" data-id="${(t.facing + 7) % 8}">⟲</button>
@@ -649,6 +701,38 @@ function treeModal(type: TowerTypeId, towerId?: number): string {
     <div class="tree-scroll">${branch(null, 1)}</div></div>`;
 }
 
+const ROLE: Record<TowerTypeId, string> = {
+  canon: 'Polyvalent', givre: 'Ralentit en cône', baliste: 'Perce en ligne', foudre: 'Éclairs en chaîne', laser: 'Rayon qui monte', relais: 'Renforce les voisines', depot: 'Dépôt du héros',
+};
+
+function buildPanel(s: GameState, high: boolean): string {
+  const ids = Object.keys(TOWERS) as TowerTypeId[];
+  const cards = ids
+    .map((id) => {
+      const d = TOWERS[id];
+      const poor = s.scrap < d.cost;
+      return `<button class="card build ${previewType === id ? 'previewing' : ''} ${poor ? 'poor' : ''}" data-act="build" data-id="${id}">
+        <img src="${towerIcon(id)}" alt="" /><b>${d.name}</b><em>${d.cost}</em><small>${ROLE[id]}</small></button>`;
+    })
+    .join('');
+  let detail = '<div class="detail muted">Survole ou touche une tourelle pour voir sa zone de tir et ses détails.</div>';
+  if (previewType) {
+    const d = TOWERS[previewType];
+    const b = d.base;
+    const tiles = [statTile(String(b.maxHp), 'PV')];
+    if (b.damage > 0) tiles.push(statTile(fmt(b.damage), 'dégâts'), statTile((high ? b.range * 1.2 : b.range).toFixed(1), `portée ${SHAPE_NAME[b.shape]}`), statTile((1 / b.cooldown).toFixed(1), 'tirs / s'));
+    else if (b.auraRadius > 0) tiles.push(statTile(fmt(b.auraRadius), 'rayon d’aura'));
+    const roots = d.nodes.filter((n) => n.parent === null).map((n) => n.name);
+    const poor = s.scrap < d.cost;
+    detail = `<div class="detail"><div class="dhead"><img src="${towerIcon(previewType)}" alt="" /><div><b>${d.name}</b><div class="muted small">${d.desc}</div></div></div>
+      <div class="tiles">${tiles.join('')}</div>
+      ${roots.length ? `<div class="muted small">Voies d’amélioration : ${roots.join(' · ')} <button class="mini" data-act="tree" data-id="${previewType}">Voir l’arbre</button></div>` : ''}
+      <button class="primary" data-act="build" data-id="${previewType}" ${poor ? 'disabled' : ''}>${poor ? `Il manque ${Math.ceil(d.cost - s.scrap)}` : `Poser · ${d.cost}`}</button></div>`;
+  }
+  return `<div class="panel-head"><h3>Construire${high ? ' <span class="muted small">point haut : +20 % de portée</span>' : ''}</h3><button data-act="close">✕</button></div>
+    <div class="cards">${cards}</div>${detail}`;
+}
+
 function renderPanel(s: GameState) {
   const el = $('panel');
   let html = '';
@@ -659,11 +743,7 @@ function renderPanel(s: GameState) {
   } else if (panel?.kind === 'slot' && role === 'strategist') {
     if (s.towers.some((t) => t.slotId === (panel as { id: number }).id)) panel = null;
     else {
-      const high = map!.slots[panel.id].high;
-      html = `<div class="panel-head"><h3>Construire${high ? ' (point haut : +20 % de portée)' : ''}</h3><button data-act="close">✕</button></div><div class="grid">${(Object.keys(TOWERS) as TowerTypeId[])
-        .map((id) => `<button class="build ${previewType === id ? 'previewing' : ''}" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${towerIcon(id)}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${zoneLabel(TOWERS[id].base)}${zoneLabel(TOWERS[id].base) ? ' · ' : ''}${TOWERS[id].desc}</small>${previewType === id && previewByTouch ? '<small class="again">Touche encore pour poser</small>' : ''}</span></button>`)
-        .join('')}</div>
-        <div class="section">Arbres d’amélioration</div><div class="chips">${(Object.keys(TOWERS) as TowerTypeId[]).filter((id) => TOWERS[id].nodes.length).map((id) => `<button class="mini" data-act="tree" data-id="${id}">${TOWERS[id].name}</button>`).join('')}</div>`;
+      html = buildPanel(s, map!.slots[panel.id].high);
     }
   } else if (panel?.kind === 'deposit') {
     html = `<div class="panel-head"><h3>Gisement (${s.deposits[panel.id]} restant)</h3><button data-act="close">✕</button></div>
@@ -731,10 +811,23 @@ function renderModal(s: GameState) {
 // Souris : survoler un bouton de construction montre sa portée sur l'emplacement choisi.
 $('game').addEventListener('mouseover', (ev) => {
   if (panel?.kind !== 'slot') return;
-  const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button.build');
+  const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button.build.card');
   const id = btn?.dataset.id as TowerTypeId | undefined;
-  if (id !== (previewType ?? undefined)) { previewByTouch = false; setPreview(id ?? null); }
+  // On garde l'aperçu tant que la souris reste dans le panneau : le détail et le bouton « Poser » restent atteignables.
+  if (!id || id === previewType) return;
+  previewByTouch = false;
+  setPreview(id);
+  renderGame();
 });
+
+// Quand on quitte l'onglet ou la fenêtre, la partie se met en pause aussitôt.
+function autoPause() {
+  if (!state || state.phase === 'over' || !lobby || lobby.paused) return;
+  net.send({ m: 'pause', on: true });
+}
+document.addEventListener('visibilitychange', () => document.hidden && autoPause());
+window.addEventListener('blur', autoPause);
+window.addEventListener('pagehide', autoPause);
 
 // Un seul gestionnaire pour toutes les actions de l'interface de jeu.
 $('game').addEventListener('pointerdown', (ev) => {
@@ -772,7 +865,9 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'build':
       // Sur écran tactile, un premier appui montre la portée ; le second pose la tour.
       if (panel?.kind === 'slot' && ev.pointerType !== 'mouse' && previewType !== id) { previewByTouch = true; setPreview(id as TowerTypeId); break; }
-      if (panel?.kind === 'slot') cmd({ c: 'build', slotId: panel.id, type: id as TowerTypeId }); return select(null);
+      if (panel?.kind === 'slot' && state.scrap < TOWERS[id as TowerTypeId].cost) { previewByTouch = ev.pointerType !== 'mouse'; setPreview(id as TowerTypeId); toast(`Il manque ${Math.ceil(TOWERS[id as TowerTypeId].cost - state.scrap)} ressources.`); break; }
+      if (panel?.kind === 'slot') cmd({ c: 'build', slotId: panel.id, type: id as TowerTypeId });
+      return select(null);
     case 'upgrade': cmd({ c: 'upgrade', towerId, nodeId: id }); break;
     case 'rotate': cmd({ c: 'rotate', towerId, facing: Number(id) }); break;
     case 'targeting': cmd({ c: 'targeting', towerId, mode: id as TowerState['targeting'] }); break;

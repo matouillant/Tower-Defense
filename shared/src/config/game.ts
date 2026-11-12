@@ -119,5 +119,8 @@ export const REWARDS: Record<RewardId, { name: string; desc: string }> = {
   renfort: { name: 'Renfort', desc: 'Efface l’usure de toutes les tours.' },
   tactique: { name: 'Tactique', desc: 'Compétences rechargées 15 % plus vite, définitivement.' },
 };
+/** Prime de fin de vague : croît avec la vague (vague 1 : 52, vague 10 : 160, vague 20 : 280). */
+export const WAVE_END_BONUS = { base: 40, perWave: 12 };
+export const waveEndBonus = (wave: number) => WAVE_END_BONUS.base + WAVE_END_BONUS.perWave * wave;
 export const REWARD_SCRAP_BASE = 150;
 export const REWARD_SCRAP_PER_WAVE = 10;

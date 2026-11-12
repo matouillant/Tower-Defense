@@ -46,7 +46,7 @@ export class Room {
   game: Game | null = null;
   /** Jeton du joueur qui tient chaque rôle (connecté ou en cours de reconnexion). */
   slots: Record<Role, string | null> = { strategist: null, hero: null };
-  private tickCount = 0;
+  private sinceState = 0;
   /** Temps de jeu en attente : la simulation avance toujours par pas fixes, quelle que soit la vitesse. */
   private pending = 0;
   /** Joueur qui a mis la partie en pause (null = elle tourne). */
@@ -278,16 +278,23 @@ export class Room {
     this.emptySince = 0;
     if (!this.game) return;
     // En pause, la simulation ne bouge plus, mais on continue d'envoyer l'état : on peut construire et améliorer.
+    // `dt` est le temps réellement écoulé : si le serveur a pris du retard, la simulation rattrape au lieu de ralentir.
+    const step = 1 / GAME_CONFIG.tickRate;
     if (!this.pausedBy) {
       this.pending += dt * this.speed * GAME_CONFIG.gameSpeed;
-      for (let i = 0; this.pending >= dt - 1e-9 && i < 8; i++) {
-        this.game.step(dt);
-        this.pending -= dt;
+      let n = 0;
+      while (this.pending >= step - 1e-9 && n < 24) {
+        this.game.step(step);
+        this.pending -= step;
+        n++;
       }
+      if (this.pending > step * 4) this.pending = 0; // trop de retard : on abandonne le reste plutôt que d'accélérer ensuite
     }
-    this.tickCount++;
-    const every = Math.max(1, Math.round(GAME_CONFIG.tickRate / GAME_CONFIG.snapshotRate));
-    if (this.tickCount % every === 0) this.sendState();
+    this.sinceState += dt;
+    if (this.sinceState >= 1 / GAME_CONFIG.snapshotRate - 1e-9) {
+      this.sinceState = 0;
+      this.sendState();
+    }
   }
 
   private sendState() {
@@ -322,7 +329,12 @@ export class RoomManager {
     return room;
   }
 
-  tick(now: number, dt: number) {
+  private lastTick = 0;
+
+  /** `now` en millisecondes : le temps écoulé réel (plafonné) est transmis aux salons. */
+  tick(now: number, _dt?: number) {
+    const dt = this.lastTick ? Math.min(0.5, Math.max(0, (now - this.lastTick) / 1000)) : 1 / GAME_CONFIG.tickRate;
+    this.lastTick = now;
     for (const room of this.rooms.values()) {
       room.tick(now, dt);
       if (room.isExpired(now)) this.rooms.delete(room.code);

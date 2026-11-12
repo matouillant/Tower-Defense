@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Game, generateMap, TOWERS, ENEMIES, BOSS_POOL, GAME_CONFIG, WAVE_CONFIG, availableUpgrades, towerMaxHp, repairCost,
-  hpMultiplier, isBossWave, dist, inShape, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
+  hpMultiplier, isBossWave, dist, inShape, waveEndBonus, decideHeroTask, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
 } from '../src/index';
 
 const DT = 1 / GAME_CONFIG.tickRate;
@@ -247,7 +247,7 @@ describe('simulation', () => {
       expect(game.state.enemies.some((e) => e === sap)).toBe(false);
       expect(t1.hp).toBeLessThan(towerMaxHp(t1));
       if (near) expect(t2.hp).toBeLessThan(towerMaxHp(t2));
-      expect(game.state.scrap).toBe(scrap);
+      expect(game.state.scrap - scrap).toBeLessThanOrEqual(waveEndBonus(game.state.wave)); // aucune prime, hors prime de fin de vague
     });
 
     it('un soigneur remonte les PV des ennemis proches, sans dépasser le maximum', () => {
@@ -402,5 +402,34 @@ describe('zones de tir et dépôt avancé', () => {
     expect(h.carry).toBe(0);
     expect(game.state.scrap).toBeGreaterThanOrEqual(before + 40 - 1);
     expect(dist(h.x, h.y, map.base.x, map.base.y)).toBeGreaterThan(4);
+  });
+});
+
+describe('économie de fin de vague et IA', () => {
+  it('la prime de fin de vague augmente avec la vague et est versée', () => {
+    expect(waveEndBonus(10)).toBeGreaterThan(waveEndBonus(1));
+    expect(waveEndBonus(20)).toBeGreaterThan(waveEndBonus(10));
+    const game = new Game(generateMap(4));
+    game.apply('strategist', { c: 'ready' });
+    let got = 0;
+    for (let i = 0; i < 20 * 600 && !got; i++) {
+      game.step(DT);
+      for (const e of game.drainEvents()) if (e.t === 'income') got = e.amount;
+    }
+    expect(got).toBe(waveEndBonus(1));
+  });
+  it('l’IA décharge au dépôt quand il est plus proche que la base', () => {
+    const map = generateMap(4);
+    const game = new Game(map);
+    game.state.scrap = 5000;
+    const slot = map.slots.slice().sort((a, b) => dist(b.x, b.y, map.base.x, map.base.y) - dist(a.x, a.y, map.base.x, map.base.y))[0];
+    game.apply('strategist', { c: 'build', slotId: slot.id, type: 'depot' });
+    const h = game.state.hero;
+    h.carry = 60;
+    h.x = slot.x + 2;
+    h.y = slot.y;
+    expect(game.nearestDrop(h.x, h.y)).not.toBe(map.base);
+    const task = decideHeroTask(game);
+    expect(task?.kind).toBe('deliver');
   });
 });

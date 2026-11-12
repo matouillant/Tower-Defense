@@ -10,6 +10,7 @@ Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur e
 - **Cartes aléatoires** à partir d'une seed, **vagues infinies**, un boss toutes les 10 vagues.
 - **6 tourelles** (Canon, Givre, Baliste, Bobine Tesla, Rayon focalisé, Relais tactique) + le Dépôt avancé, chacune avec un arbre d'amélioration à 4 niveaux et des voies exclusives ; le bouton « Voir l'arbre » les détaille.
 - **Zones de tir variées** : circulaire, en ligne (le Canon à rails transperce tout l'axe) ou en cône (Émetteur cryo), orientables ; la zone s'affiche au clic sur une tour et avant la pose.
+- **Prime de fin de vague** croissante ; la partie se met en pause dès qu'on quitte l'onglet ou la fenêtre.
 - **Dépôt avancé** : bâtiment où le héros décharge ses ressources sans retourner à la base.
 - **13 types d'ennemis** variés en vitesse, taille, blindage et attaque (essaim, artilleur qui s'arrête pour tirer, sapeur kamikaze, soigneur, blindé, golem…) et 3 boss.
 - **Menu de partie** : rejouer (nouvelle carte ou même carte), quitter vers l'accueil, plein écran (touche F).

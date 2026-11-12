@@ -105,7 +105,9 @@ export function decideHeroTask(game: Game): HeroTask | null {
   if (empty && !(inWave && enemyNear(empty.x, empty.y, posture.avoidEnemies))) return { kind: 'reload', towerId: empty.id };
 
   // 5. Dépôt quand il est bien chargé.
-  if (hero.carry >= stats.carryCap * 0.7) return { kind: 'deliver' };
+  const drop = game.nearestDrop(hero.x, hero.y);
+  const depotClose = drop !== game.map.base && dist(hero.x, hero.y, drop.x, drop.y) <= 5;
+  if (hero.carry >= stats.carryCap * (depotClose ? 0.3 : 0.7)) return { kind: 'deliver' };
 
   // 6. Ramassage de ce qui traîne, selon la prise de risque de la posture.
   if (hero.carry < stats.carryCap) {
@@ -124,7 +126,7 @@ export function decideHeroTask(game: Game): HeroTask | null {
   if (!inWave) {
     const timeLeft = s.phaseTimer;
     const backHome = (x: number, y: number) =>
-      (steps(x, y) + Math.abs(x - game.map.base.x) + Math.abs(y - game.map.base.y)) / stats.speed;
+      (steps(x, y) + Math.abs(x - game.nearestDrop(x, y).x) + Math.abs(y - game.nearestDrop(x, y).y)) / stats.speed;
     if (posture.prospect && hpFrac > 0.6) {
       const zone = game.map.prospectZones.find((z) => s.prospects[z.id] <= s.wave && backHome(z.x, z.y) + G.prospectTime + 2 < timeLeft);
       if (zone || hero.task.kind === 'prospect') return zone ? { kind: 'prospect', zoneId: zone.id } : null;

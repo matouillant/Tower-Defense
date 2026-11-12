@@ -148,6 +148,7 @@ export interface GameState {
 export type GameEvent =
   /** `chain` : positions successives des rebonds de la foudre, à plat [x1, y1, x2, y2, …]. */
   | { t: 'shot'; kind: TowerTypeId; fx: number; fy: number; tx: number; ty: number; splash: number; chain?: number[] }
+  | { t: 'income'; amount: number; wave: number }
   | { t: 'heal'; x: number; y: number; radius: number }
   | { t: 'blast'; x: number; y: number; radius: number }
   | { t: 'hit'; x: number; y: number; target: 'tower' | 'hero' }
