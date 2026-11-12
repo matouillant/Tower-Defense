@@ -65,10 +65,10 @@ export const WAVE_CONFIG = {
   /** Un boss toutes les X vagues. */
   bossEvery: 10,
   /** Budget de la vague n = baseBudget * budgetGrowth^(n-1). */
-  baseBudget: 28,
-  budgetGrowth: 1.11,
+  baseBudget: 36,
+  budgetGrowth: 1.15,
   /** PV des ennemis : hpGrowth^(n-1), puis croissance plus douce après softCapWave (rendements décroissants). */
-  hpGrowth: 1.07,
+  hpGrowth: 1.1,
   hpSoftCapWave: 40,
   hpGrowthAfterCap: 1.035,
   /** L'attaque des ennemis monte plus lentement que leurs PV. */
@@ -101,4 +101,13 @@ export const bountyMultiplier = (wave: number, cfg = WAVE_CONFIG) =>
   Math.min(cfg.bountyMaxMult, Math.pow(cfg.bountyGrowth, wave - 1));
 export const waveBudget = (wave: number, cfg = WAVE_CONFIG) =>
   cfg.baseBudget * Math.pow(cfg.budgetGrowth, wave - 1);
+/** Niveaux de difficulté : plus d'ennemis (budget) et plus de PV, avec un écart qui se creuse au fil des vagues. */
+export type Difficulty = 'normal' | 'difficile' | 'cauchemar';
+export const DIFFICULTIES: Record<Difficulty, { name: string; desc: string; budget: number; hp: number; hpPerWave: number }> = {
+  normal: { name: 'Normal', desc: 'Pour découvrir le jeu.', budget: 0.75, hp: 0.85, hpPerWave: 1 },
+  difficile: { name: 'Difficile', desc: 'Vagues nombreuses et coriaces : il faut une vraie stratégie.', budget: 1, hp: 1, hpPerWave: 1.01 },
+  cauchemar: { name: 'Cauchemar', desc: 'Pour les stratèges aguerris : chaque erreur coûte cher.', budget: 1.3, hp: 1.25, hpPerWave: 1.03 },
+};
+export const difficultyHp = (d: Difficulty, wave: number) => DIFFICULTIES[d].hp * Math.pow(DIFFICULTIES[d].hpPerWave, Math.max(0, wave - 1));
+
 export const isBossWave = (wave: number, cfg = WAVE_CONFIG) => wave > 0 && wave % cfg.bossEvery === 0;

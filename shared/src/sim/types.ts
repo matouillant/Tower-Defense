@@ -1,4 +1,4 @@
-import type { EnemyTypeId } from '../config/enemies';
+import type { Difficulty, EnemyTypeId } from '../config/enemies';
 import type { AbilityId, RewardId } from '../config/game';
 import type { TowerTypeId } from '../config/towers';
 
@@ -142,6 +142,8 @@ export interface GameState {
   /** Ennemis restant à faire apparaître dans la vague. */
   toSpawn: number;
   bossesKilled: number;
+  /** Niveau de difficulté choisi au lancement. */
+  difficulty: Difficulty;
 }
 
 /** Événements ponctuels, pour les effets visuels et les messages côté client. */

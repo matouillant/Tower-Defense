@@ -26,7 +26,7 @@ function botStrategist(game: Game) {
 }
 
 function run(seed: number, maxSeconds: number, withBot = true) {
-  const game = new Game(generateMap(seed));
+  const game = new Game(generateMap(seed), 'normal');
   const steps = maxSeconds * GAME_CONFIG.tickRate;
   for (let i = 0; i < steps && game.state.phase !== 'over'; i++) {
     if (withBot && i % 10 === 0) botStrategist(game);
@@ -427,7 +427,8 @@ describe('économie de fin de vague et IA', () => {
   it('la prime de fin de vague augmente avec la vague et est versée', () => {
     expect(waveEndBonus(10)).toBeGreaterThan(waveEndBonus(1));
     expect(waveEndBonus(20)).toBeGreaterThan(waveEndBonus(10));
-    const game = new Game(generateMap(4));
+    const game = new Game(generateMap(4), 'normal');
+    game.state.baseHp = 999;
     game.apply('strategist', { c: 'ready' });
     let got = 0;
     for (let i = 0; i < 20 * 600 && !got; i++) {
@@ -463,5 +464,36 @@ describe('reprise après perte du serveur', () => {
     const b = Game.restore(generateMap(7), JSON.parse(JSON.stringify(a.state)), JSON.parse(JSON.stringify(a.exportSim())));
     for (let i = 0; i < 20 * 30; i++) { a.step(DT); b.step(DT); }
     expect(JSON.stringify(b.state)).toBe(JSON.stringify(a.state));
+  });
+});
+
+describe('IA et dépôt avancé sur la durée', () => {
+  it('l’IA décharge au dépôt avancé proche des gisements plutôt qu’à la base', () => {
+    const map = generateMap(4);
+    const game = new Game(map);
+    game.state.scrap = 2000;
+    // Dépôt sur l'emplacement le plus proche d'un gisement éloigné de la base.
+    const far = map.deposits.slice().sort((a, b) => dist(b.x, b.y, map.base.x, map.base.y) - dist(a.x, a.y, map.base.x, map.base.y))[0];
+    const slot = map.slots.slice().sort((a, b) => dist(a.x, a.y, far.x, far.y) - dist(b.x, b.y, far.x, far.y))[0];
+    expect(game.apply('strategist', { c: 'build', slotId: slot.id, type: 'depot' })).toBeNull();
+    let atDepot = 0;
+    let atBase = 0;
+    let prev = 0;
+    let nearBase = 0;
+    game.state.phaseTimer = 1e9; // longue préparation : l'IA récolte tranquillement
+    for (let i = 0; i < 20 * 240; i++) {
+      // Le héros prend régulièrement de petits coups, comme en partie.
+      if (i % 200 === 0) game.state.hero.hp = Math.min(game.state.hero.hp, 75);
+      game.step(DT);
+      const h = game.state.hero;
+      if (prev > 0 && h.carry === 0) {
+        if (dist(h.x, h.y, slot.x, slot.y) < dist(h.x, h.y, map.base.x, map.base.y)) atDepot++;
+        else atBase++;
+      }
+      prev = game.state.hero.carry;
+      if (dist(h.x, h.y, map.base.x, map.base.y) < 2) nearBase++;
+    }
+    expect(atDepot).toBeGreaterThan(0);
+    expect(atDepot).toBeGreaterThanOrEqual(atBase);
   });
 });

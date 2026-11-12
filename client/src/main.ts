@@ -8,6 +8,8 @@ import {
   GameMap,
   GameState,
   HERO_NODES,
+  DIFFICULTIES,
+  Difficulty,
   SimSave,
   RANGE_UPGRADE,
   rangeUpgradeCost,
@@ -205,6 +207,7 @@ function renderLobby() {
     <div class="card"><b>Joueurs</b>${slots}
       <small>Si personne ne prend le héros, l'IA le joue. Un ami peut la remplacer en cours de partie avec le code.</small>
     </div>
+    <div class="card"><b>Difficulté</b>${difficultyChips()}</div>
     ${role === 'strategist' ? '<button class="primary" data-act="start">Lancer la partie</button>' : '<p class="muted">En attente du stratège pour lancer la partie.</p>'}
     <button data-act="home">Quitter ce salon</button>${fsButton()}`,
   );
@@ -235,10 +238,20 @@ $('lobby').addEventListener('click', (ev) => {
   else if (act === 'take') net.send({ m: 'take', role: btn.dataset.role as Role });
   else if (act === 'release') net.send({ m: 'release' });
   else if (act === 'start') net.send({ m: 'start' });
+  else if (act === 'difficulty') net.send({ m: 'difficulty', level: btn.dataset.id as Difficulty });
   else if (act === 'fullscreen') toggleFullscreen();
   else if (act === 'home') goHome();
 });
 let pendingName = 'Joueur';
+
+/** Choix de la difficulté : le stratège choisit, les autres voient le niveau retenu. */
+function difficultyChips(): string {
+  const cur = lobby?.difficulty ?? 'difficile';
+  if (role !== 'strategist') return `<div class="muted">${DIFFICULTIES[cur].name} · ${DIFFICULTIES[cur].desc}</div>`;
+  return `<div class="chips">${(Object.keys(DIFFICULTIES) as Difficulty[])
+    .map((d) => `<button data-act="difficulty" data-id="${d}" class="${cur === d ? 'on' : ''}">${DIFFICULTIES[d].name}</button>`)
+    .join('')}</div><small>${DIFFICULTIES[cur].desc}</small>`;
+}
 
 // ---------------------------------------------------------------- accueil et nouvelle partie
 
@@ -686,6 +699,7 @@ function menuPanel(s: GameState): string {
     ${slots}<div class="chips"><button data-act="share">Inviter un joueur</button>${canFullscreen ? `<button data-act="fullscreen">${fsLabel()}</button>` : ''}</div>
     <div class="section">Partie</div>
     <div class="chips">
+      ${canRestart ? `<div class="section">Difficulté de la prochaine partie</div>${difficultyChips()}` : ''}
       ${canRestart ? `<button data-act="restart">${confirmLabel('restart', 'Rejouer · nouvelle carte')}</button><button data-act="restartSame">${confirmLabel('restartSame', 'Rejouer · même carte')}</button>` : ''}
       <button class="danger" data-act="home">${confirmLabel('home', 'Quitter vers l’accueil')}</button>
     </div>
@@ -841,6 +855,22 @@ $('game').addEventListener('mouseover', (ev) => {
   renderGame();
 });
 
+// Garde-fou d'affichage : si le navigateur a fait défiler la page (clavier, zoom), on la remet en place
+// pour que le bandeau du haut et la barre du bas restent visibles.
+function unscroll() {
+  for (const el of [document.scrollingElement, document.body, $('game'), $('stage')]) {
+    if (el && (el.scrollTop || el.scrollLeft)) {
+      el.scrollTop = 0;
+      el.scrollLeft = 0;
+    }
+  }
+}
+setInterval(() => !$('game').hidden && unscroll(), 500);
+window.visualViewport?.addEventListener('resize', () => !$('game').hidden && unscroll());
+window.addEventListener('scroll', () => !$('game').hidden && unscroll());
+// iOS ignore « user-scalable=no » : on bloque le zoom de la page au pincement.
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+
 // Quand on quitte l'onglet ou la fenêtre, la partie se met en pause aussitôt.
 function autoPause() {
   if (!state || state.phase === 'over' || !lobby || lobby.paused) return;
@@ -909,6 +939,7 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'tree': treeView = { type: id as TowerTypeId, towerId: panel?.kind === 'tower' ? panel.id : undefined }; break;
     case 'treeClose': treeView = null; break;
     case 'restart':
+    case 'difficulty': net.send({ m: 'difficulty', level: id as Difficulty }); break;
     case 'restartSame':
       // En cours de partie, il faut confirmer ; une fois la base tombée, c'est direct.
       if (state.phase !== 'over' && !confirmed(btn.dataset.act)) break;

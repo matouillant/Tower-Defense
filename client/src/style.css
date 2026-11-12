@@ -317,3 +317,8 @@ button.primary { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 10p
   .tiles { margin: 4px 0; }
   .tile b { font-size: 15px; }
 }
+
+/* ---- L'écran de jeu reste collé à la fenêtre : jamais de défilement ni de zoom de la page (les barres restent visibles) ---- */
+html:has(#game:not([hidden])), html:has(#game:not([hidden])) body { overflow: hidden; }
+#game { position: fixed; inset: 0; height: auto; touch-action: pan-x pan-y; }
+#panel, #ai-panel, #modal .box, .tree-scroll { touch-action: pan-y; overscroll-behavior: contain; }

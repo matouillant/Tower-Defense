@@ -136,7 +136,9 @@ export function decideHeroTask(game: Game): HeroTask | null {
       game.map.deposits.forEach((dep) => {
         if (s.deposits[dep.id] <= 0) return;
         if (backHome(dep.x, dep.y) + G.harvestTime + 1 > timeLeft) return;
-        const d = steps(dep.x, dep.y);
+        // Aller-retour complet : on préfère les gisements proches d'un point de dépôt (dépôt avancé ou base).
+        const drop = game.nearestDrop(dep.x, dep.y);
+        const d = steps(dep.x, dep.y) + Math.abs(dep.x - drop.x) + Math.abs(dep.y - drop.y);
         if (!best || d < best.d) best = { id: dep.id, d };
       });
       if (best) return { kind: 'harvest', depositId: (best as { id: number }).id };
@@ -144,6 +146,9 @@ export function decideHeroTask(game: Game): HeroTask | null {
   }
 
   // 8. Rien d'urgent : on rapporte ce qu'on a, puis on attend près de la base.
-  if (hero.carry > 0 || hpFrac < 1 || (!atBase && !game.state.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff))) return { kind: 'deliver' };
+  // Chargé : on dépose au plus proche (dépôt avancé ou base). Pour se soigner, il faut la base : on n'y retourne que si c'est utile.
+  const hasDepot = game.state.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff);
+  if (hero.carry > 0) return { kind: 'deliver' };
+  if (hpFrac < (hasDepot ? 0.6 : 1) || (!atBase && !hasDepot)) return { kind: 'deliver' };
   return { kind: 'idle' };
 }

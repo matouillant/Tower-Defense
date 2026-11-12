@@ -6,6 +6,8 @@ import {
   GAME_CONFIG,
   Game,
   GameMap,
+  DIFFICULTIES,
+  Difficulty,
   GameState,
   LobbyState,
   SimSave,
@@ -54,6 +56,7 @@ export class Room {
   private pending = 0;
   /** Joueur qui a mis la partie en pause (null = elle tourne). */
   pausedBy: string | null = null;
+  difficulty: Difficulty = 'difficile';
   emptySince = 0;
 
   constructor(readonly code: string, seed: number) {
@@ -87,6 +90,7 @@ export class Room {
       paused: this.pausedBy,
       slots: ROLES.map((role) => ({ role, ...this.slotStatus(role) })),
       spectators: this.connected.filter((c) => !c.role).length,
+      difficulty: this.difficulty,
     };
   }
 
@@ -115,6 +119,7 @@ export class Room {
    */
   restoreGame(state: GameState, sim: SimSave, paused: boolean, by: string) {
     this.game = Game.restore(this.map, state, sim);
+    if (state.difficulty in DIFFICULTIES) this.difficulty = state.difficulty;
     this.pausedBy = paused ? by : null;
     this.pending = 0;
   }
@@ -202,6 +207,12 @@ export class Room {
         this.sendState(); // pour que le message s'affiche tout de suite, même en pause
         return;
       }
+      case 'difficulty': {
+        if (client.role !== 'strategist' || !(msg.level in DIFFICULTIES)) return;
+        this.difficulty = msg.level;
+        this.broadcastLobby();
+        return;
+      }
       case 'start': {
         if (this.game) return;
         if (client.role !== 'strategist') return this.send(client, { m: 'error', text: 'Seul le stratège peut lancer la partie.' });
@@ -240,7 +251,7 @@ export class Room {
 
   /** Démarre (ou redémarre) la partie avec la carte du salon, pour tous les joueurs connectés. */
   private begin() {
-    this.game = new Game(this.map);
+    this.game = new Game(this.map, this.difficulty);
     this.pausedBy = null;
     this.pending = 0;
     this.syncHeroController();

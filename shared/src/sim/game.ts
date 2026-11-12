@@ -8,6 +8,9 @@ import {
   hpMultiplier,
   isBossWave,
   waveBudget,
+  DIFFICULTIES,
+  Difficulty,
+  difficultyHp,
 } from '../config/enemies';
 import {
   ABILITIES,
@@ -89,7 +92,7 @@ export class Game {
   /** Champs de distance (BFS) vers une case, pour le déplacement du héros. La carte est fixe : cache permanent. */
   private fields = new Map<number, Int16Array>();
 
-  constructor(readonly map: GameMap) {
+  constructor(readonly map: GameMap, difficulty: Difficulty = 'difficile') {
     this.rng = new Rng(map.seed ^ 0x9e3779b9);
     this.mud = new Set(map.mud);
     this.state = {
@@ -113,6 +116,7 @@ export class Game {
       rewardChoices: null,
       toSpawn: 0,
       bossesKilled: 0,
+      difficulty: DIFFICULTIES[difficulty] ? difficulty : 'difficile',
     };
     this.resetAllowance();
   }
@@ -234,7 +238,7 @@ export class Game {
   private buildWave(wave: number): SpawnEntry[] {
     const cfg = WAVE_CONFIG;
     const boss = isBossWave(wave);
-    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1);
+    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1) * DIFFICULTIES[this.state.difficulty ?? 'difficile'].budget;
     const pool = (Object.values(ENEMIES)).filter((e) => !e.boss && e.fromWave <= wave);
     const minCost = Math.min(...pool.map((e) => e.cost));
     const picks: EnemyTypeId[] = [];
@@ -248,7 +252,7 @@ export class Game {
     // Garde-fou : le budget non dépensé (plafond d'ennemis atteint) devient des PV supplémentaires.
     const spent = total - budget;
     const overflow = spent > 0 ? total / spent : 1;
-    const hpMult = hpMultiplier(wave) * overflow;
+    const hpMult = hpMultiplier(wave) * overflow * difficultyHp(this.state.difficulty ?? 'difficile', wave);
     const interval = Math.max(cfg.minSpawnInterval, cfg.spawnWindow / Math.max(1, picks.length));
     const queue: SpawnEntry[] = picks.map((type, i) => ({
       type,
@@ -262,7 +266,7 @@ export class Game {
         type: BOSS_POOL[(n - 1) % BOSS_POOL.length],
         pathIdx: this.rng.int(0, this.map.paths.length - 1),
         at: 3,
-        hpMult: Math.pow(cfg.bossHpGrowth, n - 1),
+        hpMult: Math.pow(cfg.bossHpGrowth, n - 1) * DIFFICULTIES[this.state.difficulty ?? 'difficile'].hp,
       });
       queue.sort((a, b) => a.at - b.at);
     }
@@ -744,7 +748,9 @@ export class Game {
         break;
       case 'deliver': {
         // Chargé : on file au point de dépôt le plus proche (base ou dépôt avancé). Une fois vide et en forme, on s'arrête là.
-        if (hero.carry === 0 && hero.hp >= stats.maxHp) return done();
+        // Chargé : point de dépôt le plus proche. Vide : on ne file à la base que pour s'y soigner (sous 60 % des PV si un dépôt existe).
+        const hasDepot = this.nearestDrop(hero.x, hero.y) !== base || s.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff);
+        if (hero.carry === 0 && (hero.hp >= stats.maxHp || (hasDepot && hero.hp >= stats.maxHp * 0.6 && dist(hero.x, hero.y, base.x, base.y) > HERO_CONFIG.baseRadius))) return done();
         const drop = hero.carry > 0 ? this.nearestDrop(hero.x, hero.y) : base;
         this.moveHero(drop.x, drop.y, 0.5, dt);
         break;
