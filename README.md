@@ -8,6 +8,9 @@ Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur e
 - **Héros-réparateur** : répare, ramasse, récolte, recharge, recycle. Joué par un humain **ou par l'IA**.
 - **Une seule ressource** pour construire, améliorer et réparer.
 - **Cartes aléatoires** à partir d'une seed, **vagues infinies**, un boss toutes les 10 vagues.
+- **6 tourelles** (Canon, Givre, Baliste, Bobine Tesla, Rayon focalisé, Relais tactique), chacune avec un arbre d'amélioration à 4 niveaux et des voies exclusives ; le bouton « Voir l'arbre » les détaille.
+- **13 types d'ennemis** variés en vitesse, taille, blindage et attaque (essaim, artilleur qui s'arrête pour tirer, sapeur kamikaze, soigneur, blindé, golem…) et 3 boss.
+- **Menu de partie** : rejouer (nouvelle carte ou même carte), quitter vers l'accueil, plein écran (touche F).
 - **Code de partie** à 5 caractères : on rejoint avant le lancement, ou en cours de partie pour remplacer l'IA.
 
 ## Lancer en local
@@ -85,4 +88,5 @@ Ces chiffres n'ont pas encore été réglés par des parties réelles. Le jeu to
 - Le « changement de mode » d'une tour se limite au choix de la cible.
 - Le chemin des ennemis n'est pas modifiable par les joueurs.
 - Illustrations originales en SVG (`client/src/art/`), pas encore de sons ni de musique.
+- Plein écran : indisponible sur iPhone (limite de Safari) ; ajouter le jeu à l'écran d'accueil (PWA) donne le même effet.
 - Sur téléphone : glisser pour déplacer la carte, pincer pour zoomer ; l'affichage n'est pas encore net sur les écrans haute densité.

@@ -4086,6 +4086,19 @@ var base = (s) => ({
   pierceShield: false,
   ammo: 0,
   repairCostMult: 1,
+  chain: 0,
+  chainRange: 0,
+  chainFalloff: 0.75,
+  ramp: 0,
+  rampMax: 0,
+  critChance: 0,
+  critMult: 1,
+  auraRadius: 0,
+  auraDamage: 0,
+  auraRate: 0,
+  auraReach: 0,
+  auraHeal: 0,
+  income: 0,
   ...s
 });
 var TOWERS = {
@@ -4105,7 +4118,15 @@ var TOWERS = {
       { id: "perforant", name: "Perforant", desc: "Ignore les boucliers. Fragile.", cost: 110, parent: "precision", stats: { damage: 70, pierceShield: true, maxHp: 80 } },
       { id: "chasseur", name: "Chasseur", desc: "D\xE9g\xE2ts massifs, tr\xE8s lent, cher \xE0 r\xE9parer.", cost: 130, parent: "precision", stats: { damage: 160, cooldown: 3.2, repairCostMult: 1.6 } },
       { id: "mitrailleuse", name: "Mitrailleuse", desc: "Cadence extr\xEAme, mais consomme des munitions.", cost: 110, parent: "rafale", stats: { damage: 9, cooldown: 0.12, ammo: 400 } },
-      { id: "blindee", name: "Blind\xE9e", desc: "Robuste et \xE9conomique \xE0 r\xE9parer, frappe moins fort.", cost: 90, parent: "rafale", stats: { maxHp: 320, damage: 8, repairCostMult: 0.6 } }
+      { id: "blindee", name: "Blind\xE9e", desc: "Robuste et \xE9conomique \xE0 r\xE9parer, frappe moins fort.", cost: 90, parent: "rafale", stats: { maxHp: 320, damage: 8, repairCostMult: 0.6 } },
+      // Niveau 4
+      { id: "thermobare", name: "Thermobare", desc: "Souffle d\xE9vastateur sur une grande zone. R\xE9paration tr\xE8s ch\xE8re.", cost: 170, parent: "explosive", stats: { damage: 58, splash: 2.4, cooldown: 2.2, repairCostMult: 2.5 } },
+      { id: "brasier", name: "Brasier", desc: "Br\xFBlure intense sur une grande zone, ignore les boucliers.", cost: 150, parent: "incendiaire", stats: { dot: 24, dotDuration: 5, splash: 1.5 } },
+      { id: "saturation", name: "Saturation", desc: "Pilonne une large zone, de tr\xE8s loin.", cost: 150, parent: "mortier", stats: { damage: 36, splash: 1.7, range: 8, cooldown: 1.7 } },
+      { id: "elite", name: "Tireur d\u2019\xE9lite", desc: "Tir perforant, 30 % de coups critiques (x3).", cost: 160, parent: "perforant", stats: { damage: 110, critChance: 0.3, critMult: 3, range: 6 } },
+      { id: "executeur", name: "Ex\xE9cuteur", desc: "Tir \xE9norme, 40 % de coups critiques (x2).", cost: 170, parent: "chasseur", stats: { damage: 250, cooldown: 3.8, critChance: 0.4, critMult: 2, repairCostMult: 1.8 } },
+      { id: "tempete-plomb", name: "Temp\xEAte de plomb", desc: "Cadence d\xE9mentielle, grosse r\xE9serve de munitions.", cost: 150, parent: "mitrailleuse", stats: { damage: 11, cooldown: 0.08, ammo: 700 } },
+      { id: "forteresse", name: "Forteresse", desc: "Presque indestructible et tr\xE8s \xE9conomique \xE0 r\xE9parer.", cost: 130, parent: "blindee", stats: { maxHp: 600, damage: 10, range: 3, repairCostMult: 0.45 } }
     ]
   },
   givre: {
@@ -4120,7 +4141,16 @@ var TOWERS = {
       { id: "tempete", name: "Temp\xEAte", desc: "Zone immense. Tr\xE8s fragile.", cost: 120, parent: "blizzard", stats: { splash: 2.4, range: 3.4, maxHp: 60 } },
       { id: "permafrost", name: "Permafrost", desc: "Ralentissement plus long, tour robuste.", cost: 100, parent: "blizzard", stats: { slowDuration: 4, maxHp: 180, repairCostMult: 0.7 } },
       { id: "eclat", name: "\xC9clat", desc: "Gros d\xE9g\xE2ts de glace, cher \xE0 r\xE9parer.", cost: 120, parent: "glace-vive", stats: { damage: 60, repairCostMult: 1.8 } },
-      { id: "entrave", name: "Entrave", desc: "Immobilise presque la cible.", cost: 110, parent: "glace-vive", stats: { slow: 0.8, slowDuration: 2, cooldown: 1.6 } }
+      { id: "entrave", name: "Entrave", desc: "Immobilise presque la cible.", cost: 110, parent: "glace-vive", stats: { slow: 0.8, slowDuration: 2, cooldown: 1.6 } },
+      { id: "gel-toxique", name: "Gel toxique", desc: "Givre corrosif : ralentit et br\xFBle sur la dur\xE9e.", cost: 70, parent: null, stats: { damage: 6, slow: 0.3, slowDuration: 2, dot: 8, dotDuration: 5, splash: 0.9 } },
+      { id: "corrosion", name: "Corrosion", desc: "Acide plus fort, ignore boucliers et armures.", cost: 110, parent: "gel-toxique", stats: { dot: 18, dotDuration: 5, pierceShield: true } },
+      { id: "contagion", name: "Contagion", desc: "Zone plus large et plus de port\xE9e, effets plus l\xE9gers.", cost: 110, parent: "gel-toxique", stats: { splash: 1.8, dot: 10, range: 3.2 } },
+      // Niveau 4
+      { id: "age-glaciaire", name: "\xC2ge glaciaire", desc: "Zone gigantesque, fort ralentissement.", cost: 160, parent: "tempete", stats: { splash: 3.2, slow: 0.5, slowDuration: 3, range: 3.6, damage: 8 } },
+      { id: "cryostase", name: "Cryostase", desc: "Ralentit \xE9norm\xE9ment et longtemps. Tour robuste.", cost: 140, parent: "permafrost", stats: { slow: 0.65, slowDuration: 5, maxHp: 240 } },
+      { id: "zero-absolu", name: "Z\xE9ro absolu", desc: "D\xE9g\xE2ts de glace perforants. R\xE9paration tr\xE8s ch\xE8re.", cost: 170, parent: "eclat", stats: { damage: 130, slow: 0.6, pierceShield: true, repairCostMult: 2.2 } },
+      { id: "stase", name: "Stase", desc: "Quasi-arr\xEAt de toute une zone pendant un instant.", cost: 150, parent: "entrave", stats: { slow: 0.95, slowDuration: 1.3, cooldown: 2.2, splash: 1.1 } },
+      { id: "necrose", name: "N\xE9crose", desc: "Une br\xFBlure d\xE9vorante qui ronge m\xEAme les blind\xE9s.", cost: 150, parent: "corrosion", stats: { dot: 40, dotDuration: 6 } }
     ]
   },
   baliste: {
@@ -4135,7 +4165,81 @@ var TOWERS = {
       { id: "siege", name: "De si\xE8ge", desc: "Tueuse de boss. R\xE9paration tr\xE8s ch\xE8re.", cost: 140, parent: "lourde", stats: { damage: 320, cooldown: 3, ammo: 10, repairCostMult: 2 } },
       { id: "eclats", name: "\xC0 \xE9clats", desc: "Le carreau explose en zone.", cost: 120, parent: "lourde", stats: { splash: 1.4 } },
       { id: "autonome", name: "Autonome", desc: "Munitions illimit\xE9es, d\xE9g\xE2ts r\xE9duits.", cost: 130, parent: "repetition", stats: { damage: 28, ammo: 0 } },
-      { id: "harpon", name: "Harpon", desc: "Ralentit la cible touch\xE9e.", cost: 110, parent: "repetition", stats: { slow: 0.4, slowDuration: 1.5 } }
+      { id: "harpon", name: "Harpon", desc: "Ralentit la cible touch\xE9e.", cost: 110, parent: "repetition", stats: { slow: 0.4, slowDuration: 1.5 } },
+      { id: "perforatrice", name: "Perforatrice", desc: "Perce boucliers et armures.", cost: 90, parent: null, stats: { damage: 85, pierceShield: true, ammo: 22, cooldown: 2 } },
+      { id: "rail-magnetique", name: "Rail magn\xE9tique", desc: "Tr\xE8s longue port\xE9e, gros d\xE9g\xE2ts perforants.", cost: 130, parent: "perforatrice", stats: { damage: 140, range: 6.5, ammo: 14, cooldown: 2.4 } },
+      { id: "desintegrateur", name: "D\xE9sint\xE9grateur", desc: "Cadence plus \xE9lev\xE9e, perce toujours.", cost: 120, parent: "perforatrice", stats: { damage: 70, cooldown: 1.1, ammo: 40 } },
+      // Niveau 4
+      { id: "orbital", name: "Frappe orbitale", desc: "Un seul tir par recharge, mais il rase un boss.", cost: 200, parent: "siege", stats: { damage: 700, ammo: 6, cooldown: 5, range: 6, repairCostMult: 2.5 } },
+      { id: "grappe", name: "Grappe", desc: "Explosion en zone tr\xE8s large.", cost: 160, parent: "eclats", stats: { damage: 160, splash: 2.2, ammo: 12 } },
+      { id: "gatling", name: "Gatling \xE0 rails", desc: "Cadence soutenue, sans munitions.", cost: 160, parent: "autonome", stats: { damage: 34, cooldown: 0.5 } },
+      { id: "chaine", name: "Cha\xEEne", desc: "Entrave fortement la cible touch\xE9e.", cost: 140, parent: "harpon", stats: { damage: 50, slow: 0.75, slowDuration: 2.2 } },
+      { id: "gauss", name: "Canon de Gauss", desc: "Port\xE9e extr\xEAme, d\xE9g\xE2ts perforants \xE9normes.", cost: 170, parent: "rail-magnetique", stats: { damage: 380, range: 8, ammo: 8, cooldown: 3.6, repairCostMult: 1.8 } },
+      { id: "fission", name: "Fission", desc: "Tirs perforants qui explosent un peu en zone.", cost: 150, parent: "desintegrateur", stats: { damage: 95, cooldown: 0.9, ammo: 40, splash: 0.8 } }
+    ]
+  },
+  foudre: {
+    id: "foudre",
+    name: "Bobine Tesla",
+    desc: "L\u2019\xE9clair saute d\u2019un ennemi \xE0 l\u2019autre.",
+    cost: 60,
+    base: base({ maxHp: 95, damage: 17, range: 2.9, cooldown: 1, chain: 2, chainRange: 1.6, chainFalloff: 0.75 }),
+    nodes: [
+      { id: "arc-long", name: "Arc long", desc: "Plus de rebonds, plus loin.", cost: 70, parent: null, stats: { damage: 16, chain: 4, chainRange: 2, range: 3 } },
+      { id: "haute-tension", name: "Haute tension", desc: "Un \xE9clair puissant, peu de rebonds.", cost: 70, parent: null, stats: { damage: 42, chain: 1, cooldown: 1.6, range: 3 } },
+      { id: "statique", name: "Statique", desc: "Arcs tr\xE8s rapides et faibles, qui ralentissent.", cost: 70, parent: null, stats: { damage: 9, chain: 3, chainRange: 1.8, cooldown: 0.5, slow: 0.25, slowDuration: 0.8 } },
+      { id: "reseau", name: "R\xE9seau", desc: "L\u2019\xE9clair traverse presque toute la vague.", cost: 110, parent: "arc-long", stats: { damage: 14, chain: 7, chainRange: 2.4, cooldown: 1 } },
+      { id: "orage", name: "Orage", desc: "Les rebonds \xE9tourdissent bri\xE8vement.", cost: 110, parent: "arc-long", stats: { chain: 4, chainRange: 2.4, slow: 0.9, slowDuration: 0.6, cooldown: 1.7 } },
+      { id: "foudroyeur", name: "Foudroyeur", desc: "Perce boucliers et armures.", cost: 110, parent: "haute-tension", stats: { damage: 85, cooldown: 2, pierceShield: true, range: 3.4 } },
+      { id: "surtension", name: "Surtension", desc: "Cadence et d\xE9g\xE2ts \xE9lev\xE9s, mais la tour souffre.", cost: 110, parent: "haute-tension", stats: { damage: 60, chain: 2, cooldown: 1.2, maxHp: 70, repairCostMult: 1.6 } },
+      { id: "champ-ionique", name: "Champ ionique", desc: "Une nu\xE9e de petits arcs ralentisseurs sur une grande zone.", cost: 110, parent: "statique", stats: { damage: 11, chain: 5, chainRange: 2.3, cooldown: 0.45, slow: 0.35, slowDuration: 1, range: 3.2 } },
+      { id: "condensateur", name: "Condensateur", desc: "Charge longtemps, lib\xE8re un \xE9clair monstrueux.", cost: 110, parent: "statique", stats: { damage: 120, chain: 3, cooldown: 3.2, chainFalloff: 0.8, slow: 0, slowDuration: 0 } },
+      // Niveau 4
+      { id: "tempete-electrique", name: "Temp\xEAte \xE9lectrique", desc: "L\u2019\xE9clair frappe jusqu\u2019\xE0 11 ennemis.", cost: 160, parent: "reseau", stats: { chain: 11, chainRange: 2.8, cooldown: 0.9, chainFalloff: 0.85, maxHp: 80 } },
+      { id: "faraday", name: "Cage de Faraday", desc: "Les rebonds figent presque les ennemis sur place.", cost: 150, parent: "orage", stats: { chain: 6, slow: 0.95, slowDuration: 0.9, cooldown: 1.8 } },
+      { id: "jugement", name: "Jugement", desc: "Un \xE9clair colossal, perforant, \xE0 grande port\xE9e.", cost: 160, parent: "foudroyeur", stats: { damage: 170, chain: 2, chainFalloff: 0.7, cooldown: 2.4, range: 3.8, repairCostMult: 1.8 } }
+    ]
+  },
+  laser: {
+    id: "laser",
+    name: "Rayon focalis\xE9",
+    desc: "Plus il reste sur la m\xEAme cible, plus il frappe fort.",
+    cost: 80,
+    base: base({ maxHp: 100, damage: 4.5, range: 3.6, cooldown: 0.2, ramp: 0.1, rampMax: 10 }),
+    nodes: [
+      { id: "faisceau-lourd", name: "Faisceau lourd", desc: "Plus de d\xE9g\xE2ts et une mont\xE9e en puissance plus haute.", cost: 80, parent: null, stats: { damage: 6, ramp: 0.14, rampMax: 14, range: 4 } },
+      { id: "prisme", name: "Prisme", desc: "Touche aussi les ennemis autour de la cible.", cost: 80, parent: null, stats: { damage: 3.5, splash: 1, ramp: 0.1, rampMax: 10 } },
+      { id: "pulsar", name: "Pulsar", desc: "Impulsions puissantes et espac\xE9es.", cost: 80, parent: null, stats: { damage: 30, cooldown: 1, ramp: 0.25, rampMax: 6, range: 4.4 } },
+      { id: "lance-solaire", name: "Lance solaire", desc: "Perce boucliers et armures.", cost: 120, parent: "faisceau-lourd", stats: { damage: 9, ramp: 0.16, rampMax: 16, pierceShield: true, range: 4.4, repairCostMult: 1.4 } },
+      { id: "decoupeur", name: "D\xE9coupeur", desc: "Monte en puissance tr\xE8s vite : id\xE9al contre les blind\xE9s.", cost: 120, parent: "faisceau-lourd", stats: { damage: 5, ramp: 0.35, rampMax: 20 } },
+      { id: "spectre", name: "Spectre", desc: "Zone plus large autour de la cible.", cost: 120, parent: "prisme", stats: { damage: 4.5, splash: 1.6, ramp: 0.12, rampMax: 12, range: 3.8 } },
+      { id: "nova", name: "Nova", desc: "Pulsations lentes aux d\xE9g\xE2ts de zone puissants.", cost: 120, parent: "prisme", stats: { damage: 28, splash: 1.8, cooldown: 1, ramp: 0.15, rampMax: 6 } },
+      { id: "quasar", name: "Quasar", desc: "Impulsions d\xE9vastatrices et perforantes.", cost: 130, parent: "pulsar", stats: { damage: 70, cooldown: 1.3, ramp: 0.3, rampMax: 8, pierceShield: true, repairCostMult: 1.6 } },
+      // Niveau 4
+      { id: "zenith", name: "Rayon z\xE9nith", desc: "Une puissance qui n\u2019en finit pas de monter.", cost: 170, parent: "lance-solaire", stats: { damage: 14, ramp: 0.2, rampMax: 20, range: 5, repairCostMult: 1.8 } },
+      { id: "supernova", name: "Supernova", desc: "Zone \xE9norme, mont\xE9e en puissance de zone.", cost: 160, parent: "nova", stats: { damage: 38, splash: 2.6, cooldown: 1.1, ramp: 0.2, rampMax: 8, repairCostMult: 1.6 } }
+    ]
+  },
+  relais: {
+    id: "relais",
+    name: "Relais tactique",
+    desc: "Ne tire pas, mais renforce les tours voisines.",
+    cost: 60,
+    base: base({ maxHp: 110, damage: 0, range: 0, cooldown: 1, auraRadius: 2.2, auraDamage: 0.12 }),
+    nodes: [
+      { id: "amplificateur", name: "Amplificateur", desc: "D\xE9g\xE2ts des voisines +25 %.", cost: 70, parent: null, stats: { auraDamage: 0.25, auraRadius: 2.4 } },
+      { id: "atelier", name: "Atelier", desc: "R\xE9pare gratuitement les voisines (4 PV/s).", cost: 70, parent: null, stats: { auraDamage: 0.06, auraHeal: 4, auraRadius: 2.4 } },
+      { id: "collecteur", name: "Collecteur", desc: "Produit des ressources en continu, mais n\u2019aide plus au tir.", cost: 80, parent: null, stats: { auraDamage: 0, income: 0.4 } },
+      { id: "overclock", name: "Overclock", desc: "D\xE9g\xE2ts +25 % et cadence +20 %, mais fragile.", cost: 110, parent: "amplificateur", stats: { auraDamage: 0.25, auraRate: 0.2, maxHp: 80 } },
+      { id: "optique", name: "Optique", desc: "Port\xE9e des voisines +0,8, d\xE9g\xE2ts +20 %.", cost: 110, parent: "amplificateur", stats: { auraDamage: 0.2, auraReach: 0.8, auraRadius: 2.6 } },
+      { id: "nano-forge", name: "Nano-forge", desc: "R\xE9pare 10 PV/s sur une zone plus large.", cost: 110, parent: "atelier", stats: { auraHeal: 10, auraRadius: 2.8 } },
+      { id: "atelier-blinde", name: "Atelier blind\xE9", desc: "Tr\xE8s robuste, r\xE9pare 5 PV/s.", cost: 90, parent: "atelier", stats: { auraHeal: 5, maxHp: 420, repairCostMult: 0.5 } },
+      { id: "raffinerie", name: "Raffinerie", desc: "Production plus que doubl\xE9e, mais fragile.", cost: 120, parent: "collecteur", stats: { income: 0.9, maxHp: 80 } },
+      { id: "recycleur", name: "Recycleur", desc: "Production mod\xE9r\xE9e, et r\xE9pare un peu les voisines.", cost: 110, parent: "collecteur", stats: { income: 0.6, auraHeal: 3, auraRadius: 2.4 } },
+      // Niveau 4
+      { id: "singularite", name: "Singularit\xE9", desc: "L\u2019aura ultime : +40 % de d\xE9g\xE2ts, +30 % de cadence.", cost: 170, parent: "overclock", stats: { auraDamage: 0.4, auraRate: 0.3, auraRadius: 2.6, repairCostMult: 1.8 } },
+      { id: "regeneration", name: "R\xE9g\xE9n\xE9ration totale", desc: "R\xE9pare 22 PV/s : le h\xE9ros respire enfin.", cost: 170, parent: "nano-forge", stats: { auraHeal: 22, auraRadius: 3, auraDamage: 0.1 } },
+      { id: "complexe", name: "Complexe industriel", desc: "Production \xE9norme. \xC0 prot\xE9ger \xE0 tout prix.", cost: 170, parent: "raffinerie", stats: { income: 1.7, maxHp: 90, repairCostMult: 1.5 } }
     ]
   }
 };
@@ -4144,19 +4248,29 @@ var SYNERGIES = [
   { tower: "canon", neighbour: "givre", damageMult: 1.2, desc: "Plasma pr\xE8s d\u2019un Cryo : +20 % de d\xE9g\xE2ts." },
   { tower: "canon", neighbour: "canon", cooldownMult: 0.92, desc: "Deux Plasmas voisins : cadence +8 %." },
   { tower: "baliste", neighbour: "canon", rangeBonus: 0.5, desc: "Rails pr\xE8s d\u2019un Plasma : +0,5 de port\xE9e." },
-  { tower: "givre", neighbour: "givre", rangeBonus: 0.4, desc: "Deux Cryos voisins : +0,4 de port\xE9e." }
+  { tower: "givre", neighbour: "givre", rangeBonus: 0.4, desc: "Deux Cryos voisins : +0,4 de port\xE9e." },
+  { tower: "foudre", neighbour: "givre", damageMult: 1.2, desc: "Tesla pr\xE8s d\u2019un Cryo : +20 % de d\xE9g\xE2ts (les ennemis givr\xE9s conduisent mieux)." },
+  { tower: "foudre", neighbour: "foudre", rangeBonus: 0.3, desc: "Deux Tesla voisines : +0,3 de port\xE9e." },
+  { tower: "laser", neighbour: "givre", cooldownMult: 0.9, desc: "Rayon pr\xE8s d\u2019un Cryo : cadence +10 % (cibles plus faciles \xE0 garder)." }
 ];
 
 // shared/src/config/enemies.ts
 var ENEMIES = {
-  grunt: { id: "grunt", name: "Fantassin", hp: 48, shield: 0, speed: 1.15, attack: 5, attackRange: 1.6, attackCooldown: 1.2, bounty: 5, cost: 2, fromWave: 1, leak: 1 },
-  runner: { id: "runner", name: "Coureur", hp: 22, shield: 0, speed: 2.2, attack: 3, attackRange: 1.3, attackCooldown: 1, bounty: 4, cost: 2, fromWave: 2, leak: 1 },
-  brute: { id: "brute", name: "Brute", hp: 160, shield: 0, speed: 0.7, attack: 18, attackRange: 1.8, attackCooldown: 1.5, bounty: 14, cost: 6, fromWave: 4, leak: 2 },
-  bouclier: { id: "bouclier", name: "Porte-bouclier", hp: 60, shield: 80, speed: 0.95, attack: 6, attackRange: 1.6, attackCooldown: 1.2, bounty: 11, cost: 5, fromWave: 7, leak: 1 },
-  colosse: { id: "colosse", name: "Colosse", hp: 1600, shield: 0, speed: 0.45, attack: 40, attackRange: 2.4, attackCooldown: 2, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true },
-  reine: { id: "reine", name: "Reine de l\u2019essaim", hp: 1100, shield: 300, speed: 0.6, attack: 15, attackRange: 2, attackCooldown: 1.5, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true, spawns: "runner", spawnEvery: 2.5 }
+  grunt: { id: "grunt", name: "Fantassin", desc: "Le soldat de base.", hp: 48, shield: 0, speed: 1.15, attack: 5, attackRange: 1.6, attackCooldown: 1.2, bounty: 5, cost: 2, fromWave: 1, leak: 1, size: 0.82, weight: 3 },
+  runner: { id: "runner", name: "Coureur", desc: "Rapide et fragile.", hp: 22, shield: 0, speed: 2.2, attack: 3, attackRange: 1.3, attackCooldown: 1, bounty: 4, cost: 2, fromWave: 2, leak: 1, size: 0.86, weight: 2 },
+  essaim: { id: "essaim", name: "Nu\xE9e", desc: "Minuscule, tr\xE8s nombreux, vite arriv\xE9 \xE0 la base.", hp: 13, shield: 0, speed: 1.9, attack: 2, attackRange: 1.1, attackCooldown: 0.8, bounty: 2, cost: 1, fromWave: 3, leak: 1, size: 0.5, weight: 4 },
+  brute: { id: "brute", name: "Brute", desc: "Lente, r\xE9sistante, frappe fort.", hp: 160, shield: 0, speed: 0.7, attack: 18, attackRange: 1.8, attackCooldown: 1.5, bounty: 14, cost: 6, fromWave: 4, leak: 2, size: 1.05 },
+  artilleur: { id: "artilleur", name: "Artilleur", desc: "Tire de loin sur les tours et s\u2019arr\xEAte pour le faire.", hp: 44, shield: 0, speed: 0.9, attack: 12, attackRange: 4.2, attackCooldown: 2.2, bounty: 13, cost: 6, fromWave: 5, leak: 1, size: 0.92, halts: true },
+  sapeur: { id: "sapeur", name: "Sapeur", desc: "Court vers une tour et explose en zone.", hp: 34, shield: 0, speed: 1.55, attack: 34, attackRange: 1.3, attackCooldown: 0.5, bounty: 0, cost: 5, fromWave: 6, leak: 1, size: 0.8, blast: 1.2 },
+  bouclier: { id: "bouclier", name: "Porte-bouclier", desc: "Un bouclier d\u2019\xE9nergie absorbe les d\xE9g\xE2ts avant ses PV.", hp: 60, shield: 80, speed: 0.95, attack: 6, attackRange: 1.6, attackCooldown: 1.2, bounty: 11, cost: 5, fromWave: 7, leak: 1, size: 0.95 },
+  soigneur: { id: "soigneur", name: "Soigneur", desc: "Soigne les ennemis autour de lui : \xE0 abattre en priorit\xE9.", hp: 72, shield: 0, speed: 0.9, attack: 3, attackRange: 1.4, attackCooldown: 1.5, bounty: 14, cost: 6, fromWave: 8, leak: 1, size: 0.92, heals: { radius: 2.3, pct: 0.1, every: 2 } },
+  blinde: { id: "blinde", name: "Blind\xE9", desc: "Armure lourde : les petits calibres rebondissent.", hp: 230, shield: 0, speed: 0.8, attack: 14, attackRange: 1.7, attackCooldown: 1.4, bounty: 16, cost: 9, fromWave: 10, leak: 2, size: 1.12, armor: 8 },
+  golem: { id: "golem", name: "Golem", desc: "Un mur de roche qui avance. \xC9norm\xE9ment de PV.", hp: 420, shield: 0, speed: 0.5, attack: 30, attackRange: 2, attackCooldown: 2, bounty: 32, cost: 14, fromWave: 12, leak: 4, size: 1.45 },
+  colosse: { id: "colosse", name: "Colosse", desc: "Boss : une masse de m\xE9tal.", hp: 1600, shield: 0, speed: 0.45, attack: 40, attackRange: 2.4, attackCooldown: 2, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true, size: 1.9 },
+  reine: { id: "reine", name: "Reine de l\u2019essaim", desc: "Boss : bouclier, et fait na\xEEtre des coureurs.", hp: 1100, shield: 300, speed: 0.6, attack: 15, attackRange: 2, attackCooldown: 1.5, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true, spawns: "runner", spawnEvery: 2.5, size: 1.8 },
+  sentinelle: { id: "sentinelle", name: "Sentinelle", desc: "Boss : armur\xE9e, canon \xE0 tr\xE8s longue port\xE9e, s\u2019arr\xEAte pour tirer.", hp: 1300, shield: 0, speed: 0.4, attack: 26, attackRange: 5.2, attackCooldown: 2.4, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true, armor: 6, halts: true, size: 1.85 }
 };
-var BOSS_POOL = ["colosse", "reine"];
+var BOSS_POOL = ["colosse", "reine", "sentinelle"];
 var WAVE_CONFIG = {
   /** Un boss toutes les X vagues. */
   bossEvery: 10,
@@ -4178,6 +4292,8 @@ var WAVE_CONFIG = {
   /** Durée visée d'apparition d'une vague, et intervalle minimal entre deux ennemis. */
   spawnWindow: 22,
   minSpawnInterval: 0.25,
+  /** Un tireur ne s'arrête que ce temps (en secondes) : ensuite il avance en tirant, pour qu'une vague ne reste jamais bloquée. */
+  haltMax: 8,
   /** Vague de boss : budget d'escorte réduit, PV du boss multipliés à chaque apparition. */
   bossEscortBudget: 0.5,
   bossHpGrowth: 1.9
@@ -4319,8 +4435,23 @@ function effectiveTowerStats(tower, towers, map) {
     if (syn.cooldownMult) stats.cooldown *= syn.cooldownMult;
     if (syn.rangeBonus) stats.range += syn.rangeBonus;
   }
+  let aDamage = 0;
+  let aRate = 0;
+  let aReach = 0;
+  for (const o of towers) {
+    if (o.id === tower.id || o.hp <= 0 || o.type !== "relais") continue;
+    const os = baseTowerStats(o);
+    if (os.auraRadius <= 0 || dist(o.x, o.y, tower.x, tower.y) > os.auraRadius) continue;
+    aDamage += os.auraDamage;
+    aRate += os.auraRate;
+    aReach += os.auraReach;
+  }
+  if (aDamage) stats.damage *= 1 + Math.min(AURA_CAP.damage, aDamage);
+  if (aRate) stats.cooldown *= 1 - Math.min(AURA_CAP.rate, aRate);
+  if (aReach) stats.range += Math.min(AURA_CAP.reach, aReach);
   return stats;
 }
+var AURA_CAP = { damage: 0.7, rate: 0.4, reach: 1.2 };
 var towerMaxHp = (tower) => baseTowerStats(tower).maxHp * tower.maxHpFactor;
 function heroStats(upgrades) {
   let stats = {
@@ -4595,7 +4726,7 @@ var Game = class {
     let budget = total;
     while (budget >= minCost && picks.length < cfg.maxEnemiesPerWave) {
       const affordable = pool.filter((e) => e.cost <= budget);
-      const def = this.rng.pick(affordable);
+      const def = this.pickWeighted(affordable);
       picks.push(def.id);
       budget -= def.cost;
     }
@@ -4621,6 +4752,17 @@ var Game = class {
     }
     return queue;
   }
+  /** Tirage pondéré : les ennemis communs reviennent plus souvent que les spécialistes. */
+  pickWeighted(list) {
+    let total = 0;
+    for (const e of list) total += e.weight ?? 1;
+    let r = this.rng.next() * total;
+    for (const e of list) {
+      r -= e.weight ?? 1;
+      if (r <= 0) return e;
+    }
+    return list[list.length - 1];
+  }
   spawn(entry, at) {
     const s = this.state;
     const def = ENEMIES[entry.type];
@@ -4643,7 +4785,8 @@ var Game = class {
       dotFor: 0,
       dotDps: 0,
       atkCd: def.attackCooldown * this.rng.next(),
-      spawnCd: def.spawnEvery ?? 0
+      spawnCd: def.spawnEvery ?? def.heals?.every ?? 0,
+      halted: 0
     };
     this.placeOnPath(e);
     s.enemies.push(e);
@@ -4667,43 +4810,48 @@ var Game = class {
         this.damageEnemy(e, e.dotDps * dt, true);
         if (e.hp <= 0) continue;
       }
-      let speed = def.speed;
-      if (this.mud.has(Math.round(e.y) * this.map.width + Math.round(e.x))) speed *= MAP_CONFIG.mudSlowFactor;
-      if (e.slowFor > 0) {
-        e.slowFor -= dt;
-        speed *= 1 - e.slowFactor;
-      }
-      e.d += speed * dt;
-      const path = this.map.paths[e.pathIdx];
-      if (e.d >= path.length - 1) {
-        s.baseHp -= def.leak;
-        e.hp = 0;
-        e.bounty = 0;
-        continue;
-      }
-      this.placeOnPath(e);
+      let target = def.halts && e.halted < WAVE_CONFIG.haltMax ? this.findTarget(e, def.attackRange) : void 0;
+      if (target) e.halted += dt;
+      if (!target) {
+        let speed = def.speed;
+        if (this.mud.has(Math.round(e.y) * this.map.width + Math.round(e.x))) speed *= MAP_CONFIG.mudSlowFactor;
+        if (e.slowFor > 0) {
+          e.slowFor -= dt;
+          speed *= 1 - e.slowFactor;
+        }
+        e.d += speed * dt;
+        const path = this.map.paths[e.pathIdx];
+        if (e.d >= path.length - 1) {
+          s.baseHp -= def.leak;
+          e.hp = 0;
+          e.bounty = 0;
+          continue;
+        }
+        this.placeOnPath(e);
+      } else if (e.slowFor > 0) e.slowFor -= dt;
       e.atkCd -= dt;
       if (e.atkCd <= 0) {
-        if (hero.respawnIn <= 0 && dist(e.x, e.y, hero.x, hero.y) <= def.attackRange) {
+        if (target === void 0) target = this.findTarget(e, def.attackRange);
+        if (target) {
           e.atkCd = def.attackCooldown;
-          this.damageHero(e.attack);
-        } else {
-          let best = null;
-          let bestD = def.attackRange;
-          for (const t of s.towers) {
-            if (t.hp <= 0) continue;
-            const d = dist(e.x, e.y, t.x, t.y);
-            if (d <= bestD) {
-              bestD = d;
-              best = t;
-            }
-          }
-          if (best) {
-            e.atkCd = def.attackCooldown;
-            best.hp = Math.max(0, best.hp - e.attack);
-            if (best.hp === 0) this.emit({ t: "hit", x: best.x, y: best.y, target: "tower" });
+          if (def.blast) this.explode(e, def.blast);
+          else if ("hero" in target) this.damageHero(e.attack);
+          else {
+            target.tower.hp = Math.max(0, target.tower.hp - e.attack);
+            if (target.tower.hp === 0) this.emit({ t: "hit", x: target.tower.x, y: target.tower.y, target: "tower" });
           }
         }
+      }
+      if (e.hp <= 0) continue;
+      if (def.heals && (e.spawnCd -= dt) <= 0) {
+        e.spawnCd = def.heals.every;
+        let healed = false;
+        for (const o of s.enemies) {
+          if (o === e || o.hp <= 0 || o.hp >= o.maxHp || dist(o.x, o.y, e.x, e.y) > def.heals.radius) continue;
+          o.hp = Math.min(o.maxHp, o.hp + Math.min(o.maxHp * def.heals.pct, e.maxHp * 0.25));
+          healed = true;
+        }
+        if (healed) this.emit({ t: "heal", x: e.x, y: e.y, radius: def.heals.radius });
       }
       if (def.spawns && (e.spawnCd -= dt) <= 0) {
         e.spawnCd = def.spawnEvery;
@@ -4713,8 +4861,39 @@ var Game = class {
     }
     s.enemies = s.enemies.filter((e) => e.hp > 0);
   }
+  /** Cible d'un ennemi : le héros s'il est à portée, sinon la tour active la plus proche. */
+  findTarget(e, range) {
+    const hero = this.state.hero;
+    if (hero.respawnIn <= 0 && dist(e.x, e.y, hero.x, hero.y) <= range) return { hero: true };
+    let best = null;
+    let bestD = range;
+    for (const t of this.state.towers) {
+      if (t.hp <= 0) continue;
+      const d = dist(e.x, e.y, t.x, t.y);
+      if (d <= bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best ? { tower: best } : null;
+  }
+  /** Explosion d'un kamikaze : tout ce qui est dans le rayon prend des dégâts, et il disparaît sans rien rapporter. */
+  explode(e, radius) {
+    const s = this.state;
+    for (const t of s.towers) {
+      if (t.hp <= 0 || dist(e.x, e.y, t.x, t.y) > radius) continue;
+      t.hp = Math.max(0, t.hp - e.attack);
+      if (t.hp === 0) this.emit({ t: "hit", x: t.x, y: t.y, target: "tower" });
+    }
+    if (s.hero.respawnIn <= 0 && dist(e.x, e.y, s.hero.x, s.hero.y) <= radius) this.damageHero(e.attack);
+    this.emit({ t: "blast", x: e.x, y: e.y, radius });
+    e.hp = 0;
+    e.bounty = 0;
+  }
   damageEnemy(e, amount, pierce) {
     if (e.hp <= 0) return;
+    const armor = ENEMIES[e.type].armor;
+    if (armor && !pierce) amount = Math.max(amount * 0.25, amount - armor);
     if (e.shield > 0 && !pierce) {
       const absorbed = Math.min(e.shield, amount);
       e.shield -= absorbed;
@@ -4741,6 +4920,15 @@ var Game = class {
         continue;
       }
       const stats = effectiveTowerStats(t, s.towers, this.map);
+      if (stats.income > 0) s.scrap += stats.income * dt;
+      if (stats.auraHeal > 0) {
+        for (const o of s.towers) {
+          if (o === t || o.hp <= 0 || dist(o.x, o.y, t.x, t.y) > stats.auraRadius) continue;
+          const max = towerMaxHp(o);
+          if (o.hp < max) o.hp = Math.min(max, o.hp + stats.auraHeal * dt);
+        }
+      }
+      if (stats.damage <= 0) continue;
       let power = 1;
       if (t.overchargeFor > 0) {
         t.overchargeFor -= dt;
@@ -4770,8 +4958,17 @@ var Game = class {
       if (t.ammo > 0) t.ammo--;
       const tx = target.x;
       const ty = target.y;
-      const victims = stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
-      for (const e of victims) {
+      let damage = stats.damage * power;
+      if (stats.ramp > 0) {
+        if (t.focusId === target.id) t.focus = Math.min(stats.rampMax, t.focus + 1);
+        else {
+          t.focusId = target.id;
+          t.focus = 0;
+        }
+        damage *= 1 + stats.ramp * t.focus;
+      }
+      if (stats.critChance > 0 && this.rng.chance(stats.critChance)) damage *= stats.critMult;
+      const strike = (e, amount) => {
         if (stats.slow > 0 && (e.slowFor <= 0 || stats.slow >= e.slowFactor)) {
           e.slowFactor = stats.slow;
           e.slowFor = stats.slowDuration;
@@ -4780,9 +4977,36 @@ var Game = class {
           e.dotDps = Math.max(e.dotFor > 0 ? e.dotDps : 0, stats.dot * power);
           e.dotFor = stats.dotDuration;
         }
-        this.damageEnemy(e, stats.damage * power, stats.pierceShield);
+        this.damageEnemy(e, amount, stats.pierceShield);
+      };
+      const victims = stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
+      for (const e of victims) strike(e, damage);
+      let chain;
+      if (stats.chain > 0) {
+        const struck = new Set(victims.map((v) => v.id));
+        let from = target;
+        let mult = 1;
+        chain = [];
+        for (let i = 0; i < stats.chain; i++) {
+          let next = null;
+          let bestD = stats.chainRange;
+          for (const e of s.enemies) {
+            if (e.hp <= 0 || struck.has(e.id)) continue;
+            const d = dist(e.x, e.y, from.x, from.y);
+            if (d <= bestD) {
+              bestD = d;
+              next = e;
+            }
+          }
+          if (!next) break;
+          mult *= stats.chainFalloff;
+          struck.add(next.id);
+          strike(next, damage * mult);
+          chain.push(next.x, next.y);
+          from = next;
+        }
       }
-      this.emit({ t: "shot", kind: t.type, fx: t.x, fy: t.y, tx, ty, splash: stats.splash });
+      this.emit({ t: "shot", kind: t.type, fx: t.x, fy: t.y, tx, ty, splash: stats.splash, ...chain?.length ? { chain } : {} });
     }
   }
   removeTower(id) {
@@ -5116,7 +5340,9 @@ var Game = class {
           targeting: "first",
           aiPriority: "normal",
           disabledFor: 0,
-          overchargeFor: 0
+          overchargeFor: 0,
+          focusId: 0,
+          focus: 0
         });
         return null;
       }
@@ -5394,12 +5620,19 @@ var Room = class {
       case "start": {
         if (this.game) return;
         if (client.role !== "strategist") return this.send(client, { m: "error", text: "Seul le strat\xE8ge peut lancer la partie." });
-        this.game = new Game(this.map);
-        this.syncHeroController();
-        for (const c of this.connected) this.send(c, { m: "started", map: this.map });
-        this.broadcastLobby();
+        this.begin();
         return;
       }
+      case "restart": {
+        if (!this.game || !client.role) return;
+        const over = this.game.state.phase === "over";
+        if (!over && client.role !== "strategist") return this.send(client, { m: "error", text: "Seul le strat\xE8ge peut relancer une partie en cours." });
+        this.map = generateMap(msg.sameMap ? this.map.requestedSeed : (0, import_node_crypto.randomInt)(2 ** 32));
+        this.begin();
+        return;
+      }
+      case "leave":
+        return this.leave(client);
       case "cmd": {
         if (!this.game) return;
         const cmd = msg.cmd;
@@ -5417,6 +5650,28 @@ var Room = class {
       case "ping":
         return this.send(client, { m: "pong", t: msg.t });
     }
+  }
+  /** Démarre (ou redémarre) la partie avec la carte du salon, pour tous les joueurs connectés. */
+  begin() {
+    this.game = new Game(this.map);
+    this.pausedBy = null;
+    this.pending = 0;
+    this.syncHeroController();
+    for (const c of this.connected) this.send(c, { m: "started", map: this.map });
+    this.broadcastLobby();
+  }
+  /** Départ volontaire : le rôle est libéré immédiatement, sans délai de reconnexion. */
+  leave(client) {
+    const role = client.role;
+    if (role) {
+      this.slots[role] = null;
+      client.role = null;
+    }
+    client.socket = null;
+    this.clients.delete(client.token);
+    this.syncHeroController();
+    if (this.game && role === "hero") this.game.emit({ t: "msg", from: "jeu", text: `${client.name} a quitt\xE9 la partie : l\u2019IA reprend le h\xE9ros.` });
+    this.broadcastLobby();
   }
   disconnect(client, now) {
     client.socket = null;
@@ -5535,6 +5790,12 @@ function attachGame(wss) {
         return;
       }
       if (msg.m === "ping") return reply({ m: "pong", t: msg.t });
+      if (msg.m === "leave") {
+        if (room && client) room.leave(client);
+        room = null;
+        client = null;
+        return;
+      }
       if (room && client) room.handle(client, msg);
     });
     ws.on("close", () => {

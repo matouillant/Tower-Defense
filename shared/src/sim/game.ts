@@ -212,7 +212,7 @@ export class Game {
     let budget = total;
     while (budget >= minCost && picks.length < cfg.maxEnemiesPerWave) {
       const affordable = pool.filter((e) => e.cost <= budget);
-      const def = this.rng.pick(affordable);
+      const def = this.pickWeighted(affordable);
       picks.push(def.id);
       budget -= def.cost;
     }
@@ -240,6 +240,18 @@ export class Game {
     return queue;
   }
 
+  /** Tirage pondéré : les ennemis communs reviennent plus souvent que les spécialistes. */
+  private pickWeighted<T extends { weight?: number }>(list: T[]): T {
+    let total = 0;
+    for (const e of list) total += e.weight ?? 1;
+    let r = this.rng.next() * total;
+    for (const e of list) {
+      r -= e.weight ?? 1;
+      if (r <= 0) return e;
+    }
+    return list[list.length - 1];
+  }
+
   private spawn(entry: SpawnEntry, at?: { d: number }) {
     const s = this.state;
     const def = ENEMIES[entry.type];
@@ -262,7 +274,8 @@ export class Game {
       dotFor: 0,
       dotDps: 0,
       atkCd: def.attackCooldown * this.rng.next(),
-      spawnCd: def.spawnEvery ?? 0,
+      spawnCd: def.spawnEvery ?? def.heals?.every ?? 0,
+      halted: 0,
     };
     this.placeOnPath(e);
     s.enemies.push(e);
@@ -289,45 +302,53 @@ export class Game {
         this.damageEnemy(e, e.dotDps * dt, true);
         if (e.hp <= 0) continue;
       }
-      let speed = def.speed;
-      if (this.mud.has(Math.round(e.y) * this.map.width + Math.round(e.x))) speed *= MAP_CONFIG.mudSlowFactor;
-      if (e.slowFor > 0) {
-        e.slowFor -= dt;
-        speed *= 1 - e.slowFactor;
-      }
-      e.d += speed * dt;
-      const path = this.map.paths[e.pathIdx];
-      if (e.d >= path.length - 1) {
-        s.baseHp -= def.leak;
-        e.hp = 0;
-        e.bounty = 0;
-        continue;
-      }
-      this.placeOnPath(e);
+      // Les tireurs s'arrêtent dès qu'une cible est à portée ; les autres avancent toujours.
+      let target = def.halts && e.halted < WAVE_CONFIG.haltMax ? this.findTarget(e, def.attackRange) : undefined;
+      if (target) e.halted += dt;
+      if (!target) {
+        let speed = def.speed;
+        if (this.mud.has(Math.round(e.y) * this.map.width + Math.round(e.x))) speed *= MAP_CONFIG.mudSlowFactor;
+        if (e.slowFor > 0) {
+          e.slowFor -= dt;
+          speed *= 1 - e.slowFactor;
+        }
+        e.d += speed * dt;
+        const path = this.map.paths[e.pathIdx];
+        if (e.d >= path.length - 1) {
+          s.baseHp -= def.leak;
+          e.hp = 0;
+          e.bounty = 0;
+          continue;
+        }
+        this.placeOnPath(e);
+      } else if (e.slowFor > 0) e.slowFor -= dt;
 
       // Attaque : le héros s'il est à portée, sinon la tour active la plus proche.
       e.atkCd -= dt;
       if (e.atkCd <= 0) {
-        if (hero.respawnIn <= 0 && dist(e.x, e.y, hero.x, hero.y) <= def.attackRange) {
+        if (target === undefined) target = this.findTarget(e, def.attackRange);
+        if (target) {
           e.atkCd = def.attackCooldown;
-          this.damageHero(e.attack);
-        } else {
-          let best: TowerState | null = null;
-          let bestD = def.attackRange;
-          for (const t of s.towers) {
-            if (t.hp <= 0) continue;
-            const d = dist(e.x, e.y, t.x, t.y);
-            if (d <= bestD) {
-              bestD = d;
-              best = t;
-            }
-          }
-          if (best) {
-            e.atkCd = def.attackCooldown;
-            best.hp = Math.max(0, best.hp - e.attack);
-            if (best.hp === 0) this.emit({ t: 'hit', x: best.x, y: best.y, target: 'tower' });
+          if (def.blast) this.explode(e, def.blast);
+          else if ('hero' in target) this.damageHero(e.attack);
+          else {
+            target.tower.hp = Math.max(0, target.tower.hp - e.attack);
+            if (target.tower.hp === 0) this.emit({ t: 'hit', x: target.tower.x, y: target.tower.y, target: 'tower' });
           }
         }
+      }
+      if (e.hp <= 0) continue;
+
+      if (def.heals && (e.spawnCd -= dt) <= 0) {
+        e.spawnCd = def.heals.every;
+        // Chaque cible reçoit une part de ses PV, mais jamais plus qu'un quart des PV du soigneur : il ne rend pas un boss increvable.
+        let healed = false;
+        for (const o of s.enemies) {
+          if (o === e || o.hp <= 0 || o.hp >= o.maxHp || dist(o.x, o.y, e.x, e.y) > def.heals.radius) continue;
+          o.hp = Math.min(o.maxHp, o.hp + Math.min(o.maxHp * def.heals.pct, e.maxHp * 0.25));
+          healed = true;
+        }
+        if (healed) this.emit({ t: 'heal', x: e.x, y: e.y, radius: def.heals.radius });
       }
 
       if (def.spawns && (e.spawnCd -= dt) <= 0) {
@@ -339,8 +360,41 @@ export class Game {
     s.enemies = s.enemies.filter((e) => e.hp > 0);
   }
 
+  /** Cible d'un ennemi : le héros s'il est à portée, sinon la tour active la plus proche. */
+  private findTarget(e: EnemyState, range: number): { hero: true } | { tower: TowerState } | null {
+    const hero = this.state.hero;
+    if (hero.respawnIn <= 0 && dist(e.x, e.y, hero.x, hero.y) <= range) return { hero: true };
+    let best: TowerState | null = null;
+    let bestD = range;
+    for (const t of this.state.towers) {
+      if (t.hp <= 0) continue;
+      const d = dist(e.x, e.y, t.x, t.y);
+      if (d <= bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best ? { tower: best } : null;
+  }
+
+  /** Explosion d'un kamikaze : tout ce qui est dans le rayon prend des dégâts, et il disparaît sans rien rapporter. */
+  private explode(e: EnemyState, radius: number) {
+    const s = this.state;
+    for (const t of s.towers) {
+      if (t.hp <= 0 || dist(e.x, e.y, t.x, t.y) > radius) continue;
+      t.hp = Math.max(0, t.hp - e.attack);
+      if (t.hp === 0) this.emit({ t: 'hit', x: t.x, y: t.y, target: 'tower' });
+    }
+    if (s.hero.respawnIn <= 0 && dist(e.x, e.y, s.hero.x, s.hero.y) <= radius) this.damageHero(e.attack);
+    this.emit({ t: 'blast', x: e.x, y: e.y, radius });
+    e.hp = 0;
+    e.bounty = 0;
+  }
+
   private damageEnemy(e: EnemyState, amount: number, pierce: boolean) {
     if (e.hp <= 0) return;
+    const armor = ENEMIES[e.type].armor;
+    if (armor && !pierce) amount = Math.max(amount * 0.25, amount - armor);
     if (e.shield > 0 && !pierce) {
       const absorbed = Math.min(e.shield, amount);
       e.shield -= absorbed;
@@ -369,6 +423,16 @@ export class Game {
         continue;
       }
       const stats = effectiveTowerStats(t, s.towers, this.map);
+      // Effets passifs des relais : production de ressources et réparation gratuite des voisines.
+      if (stats.income > 0) s.scrap += stats.income * dt;
+      if (stats.auraHeal > 0) {
+        for (const o of s.towers) {
+          if (o === t || o.hp <= 0 || dist(o.x, o.y, t.x, t.y) > stats.auraRadius) continue;
+          const max = towerMaxHp(o);
+          if (o.hp < max) o.hp = Math.min(max, o.hp + stats.auraHeal * dt);
+        }
+      }
+      if (stats.damage <= 0) continue;
       let power = 1;
       if (t.overchargeFor > 0) {
         t.overchargeFor -= dt;
@@ -403,8 +467,18 @@ export class Game {
       if (t.ammo > 0) t.ammo--;
       const tx = target.x;
       const ty = target.y;
-      const victims = stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
-      for (const e of victims) {
+      let damage = stats.damage * power;
+      if (stats.ramp > 0) {
+        // Rayon : chaque tir de suite sur la même cible frappe un peu plus fort.
+        if (t.focusId === target.id) t.focus = Math.min(stats.rampMax, t.focus + 1);
+        else {
+          t.focusId = target.id;
+          t.focus = 0;
+        }
+        damage *= 1 + stats.ramp * t.focus;
+      }
+      if (stats.critChance > 0 && this.rng.chance(stats.critChance)) damage *= stats.critMult;
+      const strike = (e: EnemyState, amount: number) => {
         if (stats.slow > 0 && (e.slowFor <= 0 || stats.slow >= e.slowFactor)) {
           e.slowFactor = stats.slow;
           e.slowFor = stats.slowDuration;
@@ -413,9 +487,37 @@ export class Game {
           e.dotDps = Math.max(e.dotFor > 0 ? e.dotDps : 0, stats.dot * power);
           e.dotFor = stats.dotDuration;
         }
-        this.damageEnemy(e, stats.damage * power, stats.pierceShield);
+        this.damageEnemy(e, amount, stats.pierceShield);
+      };
+      const victims = stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
+      for (const e of victims) strike(e, damage);
+      // Foudre : l'éclair rebondit de proche en proche sur des ennemis encore intacts, en perdant de la puissance.
+      let chain: number[] | undefined;
+      if (stats.chain > 0) {
+        const struck = new Set(victims.map((v) => v.id));
+        let from = target;
+        let mult = 1;
+        chain = [];
+        for (let i = 0; i < stats.chain; i++) {
+          let next: EnemyState | null = null;
+          let bestD = stats.chainRange;
+          for (const e of s.enemies) {
+            if (e.hp <= 0 || struck.has(e.id)) continue;
+            const d = dist(e.x, e.y, from.x, from.y);
+            if (d <= bestD) {
+              bestD = d;
+              next = e;
+            }
+          }
+          if (!next) break;
+          mult *= stats.chainFalloff;
+          struck.add(next.id);
+          strike(next, damage * mult);
+          chain.push(next.x, next.y);
+          from = next;
+        }
       }
-      this.emit({ t: 'shot', kind: t.type, fx: t.x, fy: t.y, tx, ty, splash: stats.splash });
+      this.emit({ t: 'shot', kind: t.type, fx: t.x, fy: t.y, tx, ty, splash: stats.splash, ...(chain?.length ? { chain } : {}) });
     }
   }
 
@@ -757,7 +859,7 @@ export class Game {
         if (!pay(def.cost)) return poor;
         s.towers.push({
           id: this.nextId++, type: def.id, slotId: slot.id, x: slot.x, y: slot.y, hp: def.base.maxHp, maxHpFactor: 1, path: [],
-          invested: def.cost, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0,
+          invested: def.cost, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0, focusId: 0, focus: 0,
         });
         return null;
       }

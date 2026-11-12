@@ -16,6 +16,17 @@ import portal from './art/portal.svg';
 import reine from './art/reine.svg';
 import rock from './art/rock.svg';
 import runner from './art/runner.svg';
+import artilleur from './art/artilleur.svg';
+import blinde from './art/blinde.svg';
+import essaim from './art/essaim.svg';
+import foudre from './art/foudre.svg';
+import golem from './art/golem.svg';
+import laser_base from './art/laser_base.svg';
+import laser_head from './art/laser_head.svg';
+import relais from './art/relais.svg';
+import sapeur from './art/sapeur.svg';
+import sentinelle from './art/sentinelle.svg';
+import soigneur from './art/soigneur.svg';
 
 /** Illustrations originales du jeu (SVG). La taille est celle de la texture générée, en pixels. */
 export const ART: Record<string, { url: string; size: number }> = {
@@ -37,4 +48,20 @@ export const ART: Record<string, { url: string; size: number }> = {
   deposit: { url: deposit, size: 160 },
   dig: { url: dig, size: 160 },
   bolt: { url: bolt, size: 96 },
+  essaim: { url: essaim, size: 128 },
+  artilleur: { url: artilleur, size: 160 },
+  sapeur: { url: sapeur, size: 160 },
+  soigneur: { url: soigneur, size: 176 },
+  blinde: { url: blinde, size: 192 },
+  golem: { url: golem, size: 256 },
+  sentinelle: { url: sentinelle, size: 320 },
+  foudre: { url: foudre, size: 192 },
+  laser_base: { url: laser_base, size: 192 },
+  laser_head: { url: laser_head, size: 192 },
+  relais: { url: relais, size: 192 },
 };
+
+/** Tours sans tête pivotante : une seule image, qui pulse doucement. */
+export const HEADLESS_TOWERS = new Set(['givre', 'foudre', 'relais']);
+/** Image de la tour dans les menus. */
+export const towerIcon = (id: string) => ART[HEADLESS_TOWERS.has(id) ? id : `${id}_head`].url;

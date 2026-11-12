@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192"><defs><radialGradient id="a" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#ecdcc6"/><stop offset="0.45" stop-color="#9a8266"/><stop offset="1" stop-color="#43362a"/></radialGradient><radialGradient id="ey" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#fff"/><stop offset="0.4" stop-color="#ffe066"/><stop offset="1" stop-color="#ff7a00"/></radialGradient></defs>
+<circle cx="100" cy="104" r="80" fill="#000" opacity=".28"/>
+<path d="M44 52 22 34 36 24 58 38zM44 144 22 162 36 172 58 158z" fill="url(#a)" stroke="#0d1220" stroke-linejoin="round" stroke-linecap="round" stroke-width="5"/>
+<path d="M30 44 20 30M30 150 20 164" stroke="#0d1220" stroke-width="3" fill="none"/>
+<path d="M30 78 44 40 90 28 142 42 168 80 170 116 140 156 88 168 40 154 24 118z" fill="url(#a)" stroke="#0d1220" stroke-linejoin="round" stroke-linecap="round" stroke-width="6"/>
+<path d="M54 64q24-22 60-24" stroke="#f3e8d8" stroke-width="7" fill="none" stroke-linecap="round" opacity=".6"/>
+<path d="M52 92 78 84 92 104 120 96 134 122M70 140 92 124 96 146M110 60 120 78 148 74" fill="none" stroke="#ffb04a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M52 92 78 84 92 104 120 96 134 122M70 140 92 124 96 146M110 60 120 78 148 74" fill="none" stroke="#fff2c8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
+<circle cx="168" cy="70" r="22" fill="url(#a)" stroke="#0d1220" stroke-linejoin="round" stroke-linecap="round" stroke-width="6"/><circle cx="168" cy="126" r="22" fill="url(#a)" stroke="#0d1220" stroke-linejoin="round" stroke-linecap="round" stroke-width="6"/>
+<circle cx="168" cy="70" r="9" fill="#ffb04a" opacity=".8"/><circle cx="168" cy="126" r="9" fill="#ffb04a" opacity=".8"/>
+<path d="M112 82 142 90 142 108 112 114z" fill="#0d1220" stroke="#0d1220" stroke-linejoin="round" stroke-linecap="round" stroke-width="4"/><circle cx="130" cy="92" r="6" fill="url(#ey)"/><circle cx="130" cy="106" r="6" fill="url(#ey)"/>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><defs><radialGradient id="sd" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#eef3ff"/><stop offset="0.45" stop-color="#8e9bb8"/><stop offset="1" stop-color="#3d4763"/></radialGradient><radialGradient id="dk" cx="35%" cy="30%" r="75%"><stop offset="0" stop-color="#6b7896"/><stop offset="0.45" stop-color="#1d2438"/><stop offset="1" stop-color="#1d2438"/></radialGradient></defs>
+<circle cx="51" cy="53" r="40" fill="#000" opacity=".28"/>
+<circle cx="48" cy="48" r="39" fill="url(#sd)" stroke="#0d1220" stroke-linejoin="round" stroke-linecap="round" stroke-width="3"/>
+<circle cx="48" cy="48" r="27" fill="url(#dk)" stroke="#0d1220" stroke-linejoin="round" stroke-linecap="round" stroke-width="2.5"/>
+<circle cx="81" cy="48" r="2.6" fill="#1d2438"/><circle cx="64.5" cy="76.6" r="2.6" fill="#1d2438"/><circle cx="31.5" cy="76.6" r="2.6" fill="#1d2438"/><circle cx="15" cy="48" r="2.6" fill="#1d2438"/><circle cx="31.5" cy="19.4" r="2.6" fill="#1d2438"/><circle cx="64.5" cy="19.4" r="2.6" fill="#1d2438"/>
+<circle cx="48" cy="48" r="27" fill="none" stroke="#ff4d8d" stroke-width="2.5" stroke-dasharray="6 8" opacity=".9"/>
+</svg>

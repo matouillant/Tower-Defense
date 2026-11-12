@@ -32,8 +32,26 @@ export function effectiveTowerStats(tower: TowerState, towers: TowerState[], map
     if (syn.cooldownMult) stats.cooldown *= syn.cooldownMult;
     if (syn.rangeBonus) stats.range += syn.rangeBonus;
   }
+  // Auras des relais voisins (cumulables, mais plafonnées pour que la pose de plusieurs relais ne casse pas le jeu).
+  let aDamage = 0;
+  let aRate = 0;
+  let aReach = 0;
+  for (const o of towers) {
+    if (o.id === tower.id || o.hp <= 0 || o.type !== 'relais') continue;
+    const os = baseTowerStats(o);
+    if (os.auraRadius <= 0 || dist(o.x, o.y, tower.x, tower.y) > os.auraRadius) continue;
+    aDamage += os.auraDamage;
+    aRate += os.auraRate;
+    aReach += os.auraReach;
+  }
+  if (aDamage) stats.damage *= 1 + Math.min(AURA_CAP.damage, aDamage);
+  if (aRate) stats.cooldown *= 1 - Math.min(AURA_CAP.rate, aRate);
+  if (aReach) stats.range += Math.min(AURA_CAP.reach, aReach);
   return stats;
 }
+
+/** Plafonds cumulés des auras de relais. */
+export const AURA_CAP = { damage: 0.7, rate: 0.4, reach: 1.2 };
 
 /** PV max actuels d'une tour, usure comprise. */
 export const towerMaxHp = (tower: TowerState) => baseTowerStats(tower).maxHp * tower.maxHpFactor;

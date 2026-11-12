@@ -1,0 +1,14 @@
+{
+  "name": "Boulon & le Dôme",
+  "short_name": "Boulon",
+  "description": "Tower defense coopératif : un stratège, un mécano, et une IA qui peut jouer le mécano.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#050812",
+  "theme_color": "#050812",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -59,6 +59,14 @@ export class Net {
     };
   }
 
+  /** Ferme la connexion pour de bon (retour à l'accueil) : pas de reconnexion automatique. */
+  disconnect() {
+    const ws = this.ws;
+    this.ws = null;
+    this.session = null;
+    ws?.close();
+  }
+
   send(msg: ClientMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }

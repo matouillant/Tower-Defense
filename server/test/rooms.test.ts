@@ -129,4 +129,53 @@ describe('salons', () => {
     room.tick(3000, DT);
     expect(room.game!.state.tick).toBe(tick);
   });
+
+  it('relancer : le stratège à tout moment, un autre joueur seulement une fois la base tombée ; mêmes rôles, nouvelle carte', () => {
+    const room = new RoomManager().create() as Room;
+    const s1 = fakeSocket();
+    const s2 = fakeSocket();
+    const p1 = room.join(s1, 'Alice') as any;
+    const p2 = room.join(s2, 'Bob') as any;
+    room.handle(p1, { m: 'start' });
+    room.handle(p1, { m: 'cmd', cmd: { c: 'build', slotId: 0, type: 'canon' } });
+    expect(room.game!.state.towers.length).toBe(1);
+
+    // Le héros ne peut pas relancer une partie en cours.
+    room.handle(p2, { m: 'restart' });
+    expect(s2.last('error')).toBeTruthy();
+    expect(room.game!.state.towers.length).toBe(1);
+
+    room.handle(p1, { m: 'restart' });
+    expect(room.game!.state.towers.length).toBe(0);
+    expect(room.game!.state.wave).toBe(0);
+    expect(room.game!.state.heroController).toBe('human');
+    expect(room.lobby().slots.map((sl) => sl.role + ':' + sl.status)).toEqual(['strategist:human', 'hero:human']);
+    expect(s2.last('started').map.seed).toBe(room.map.seed);
+
+    // Même carte demandée : la seed ne change pas.
+    const seed = room.map.seed;
+    room.handle(p1, { m: 'restart', sameMap: true });
+    expect(room.map.seed).toBe(seed);
+
+    // Base tombée : le héros peut relancer.
+    room.game!.state.baseHp = 0;
+    room.game!.step(DT);
+    expect(room.game!.state.phase).toBe('over');
+    room.handle(p2, { m: 'restart' });
+    expect(room.game!.state.phase).toBe('prep');
+  });
+
+  it('quitter : le rôle est libéré tout de suite et l’IA reprend le héros', () => {
+    const room = new RoomManager().create() as Room;
+    const p1 = room.join(fakeSocket(), 'Alice') as any;
+    const p2 = room.join(fakeSocket(), 'Bob') as any;
+    room.handle(p1, { m: 'start' });
+    expect(room.game!.state.heroController).toBe('human');
+    room.leave(p2);
+    expect(room.game!.state.heroController).toBe('ai');
+    expect(room.lobby().slots[1].status).toBe('ai');
+    expect(room.clients.has(p2.token)).toBe(false);
+    room.leave(p1);
+    expect(room.lobby().slots[0].status).toBe('open');
+  });
 });

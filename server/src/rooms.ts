@@ -42,7 +42,7 @@ const MAX_CLIENTS_PER_ROOM = 8;
 
 export class Room {
   readonly clients = new Map<string, Client>();
-  readonly map: GameMap;
+  map: GameMap;
   game: Game | null = null;
   /** Jeton du joueur qui tient chaque rôle (connecté ou en cours de reconnexion). */
   slots: Record<Role, string | null> = { strategist: null, hero: null };
@@ -183,12 +183,20 @@ export class Room {
       case 'start': {
         if (this.game) return;
         if (client.role !== 'strategist') return this.send(client, { m: 'error', text: 'Seul le stratège peut lancer la partie.' });
-        this.game = new Game(this.map);
-        this.syncHeroController();
-        for (const c of this.connected) this.send(c, { m: 'started', map: this.map });
-        this.broadcastLobby();
+        this.begin();
         return;
       }
+      case 'restart': {
+        if (!this.game || !client.role) return;
+        const over = this.game.state.phase === 'over';
+        if (!over && client.role !== 'strategist') return this.send(client, { m: 'error', text: 'Seul le stratège peut relancer une partie en cours.' });
+        // Même salon, mêmes joueurs, mêmes rôles : seule la carte change (sauf si on rejoue la même).
+        this.map = generateMap(msg.sameMap ? this.map.requestedSeed : randomInt(2 ** 32));
+        this.begin();
+        return;
+      }
+      case 'leave':
+        return this.leave(client);
       case 'cmd': {
         if (!this.game) return;
         const cmd = msg.cmd;
@@ -206,6 +214,30 @@ export class Room {
       case 'ping':
         return this.send(client, { m: 'pong', t: msg.t });
     }
+  }
+
+  /** Démarre (ou redémarre) la partie avec la carte du salon, pour tous les joueurs connectés. */
+  private begin() {
+    this.game = new Game(this.map);
+    this.pausedBy = null;
+    this.pending = 0;
+    this.syncHeroController();
+    for (const c of this.connected) this.send(c, { m: 'started', map: this.map });
+    this.broadcastLobby();
+  }
+
+  /** Départ volontaire : le rôle est libéré immédiatement, sans délai de reconnexion. */
+  leave(client: Client) {
+    const role = client.role;
+    if (role) {
+      this.slots[role] = null;
+      client.role = null;
+    }
+    client.socket = null;
+    this.clients.delete(client.token);
+    this.syncHeroController();
+    if (this.game && role === 'hero') this.game.emit({ t: 'msg', from: 'jeu', text: `${client.name} a quitté la partie : l’IA reprend le héros.` });
+    this.broadcastLobby();
   }
 
   disconnect(client: Client, now: number) {

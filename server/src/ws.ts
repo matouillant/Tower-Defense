@@ -46,6 +46,12 @@ export function attachGame(wss: WebSocketServer): RoomManager {
         return;
       }
       if (msg.m === 'ping') return reply({ m: 'pong', t: msg.t });
+      if (msg.m === 'leave') {
+        if (room && client) room.leave(client);
+        room = null;
+        client = null;
+        return;
+      }
       if (room && client) room.handle(client, msg);
     });
 

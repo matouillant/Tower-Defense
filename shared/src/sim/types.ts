@@ -28,6 +28,9 @@ export interface TowerState {
   aiPriority: AiPriority;
   disabledFor: number;
   overchargeFor: number;
+  /** Rayon focalisé : cible suivie et nombre de tirs consécutifs dessus. */
+  focusId: number;
+  focus: number;
 }
 
 export interface EnemyState {
@@ -49,6 +52,8 @@ export interface EnemyState {
   dotDps: number;
   atkCd: number;
   spawnCd: number;
+  /** Temps déjà passé à l'arrêt pour tirer (les tireurs ne s'arrêtent qu'un temps limité). */
+  halted: number;
 }
 
 export interface PickupState {
@@ -137,7 +142,10 @@ export interface GameState {
 
 /** Événements ponctuels, pour les effets visuels et les messages côté client. */
 export type GameEvent =
-  | { t: 'shot'; kind: TowerTypeId; fx: number; fy: number; tx: number; ty: number; splash: number }
+  /** `chain` : positions successives des rebonds de la foudre, à plat [x1, y1, x2, y2, …]. */
+  | { t: 'shot'; kind: TowerTypeId; fx: number; fy: number; tx: number; ty: number; splash: number; chain?: number[] }
+  | { t: 'heal'; x: number; y: number; radius: number }
+  | { t: 'blast'; x: number; y: number; radius: number }
   | { t: 'hit'; x: number; y: number; target: 'tower' | 'hero' }
   | { t: 'death'; x: number; y: number; boss: boolean }
   | { t: 'ability'; id: AbilityId; x: number; y: number; radius: number }

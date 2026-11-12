@@ -42,6 +42,10 @@ export type ClientMessage =
   /** Rendre son rôle (le héros repasse à l'IA). */
   | { m: 'release' }
   | { m: 'start' }
+  /** Relancer une partie dans le même salon (nouvelle carte, ou la même). Le stratège à tout moment, n'importe quel joueur une fois la base tombée. */
+  | { m: 'restart'; sameMap?: boolean }
+  /** Quitter le salon : le rôle est libéré tout de suite (le héros repasse à l'IA). */
+  | { m: 'leave' }
   /** Vitesse souhaitée. Elle ne s'applique que si tous les joueurs humains demandent au moins autant. */
   | { m: 'speed'; speed: number }
   /** Mettre en pause ou reprendre. N'importe quel joueur peut faire l'un ou l'autre. */

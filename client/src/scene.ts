@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { ABILITIES, AbilityId, ENEMIES, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
-import { ART } from './art';
+import { ART, HEADLESS_TOWERS } from './art';
 
 export const TILE = 48;
 /** Taille minimale d'une case à l'écran, en pixels CSS, pour rester confortable au doigt. */
@@ -16,9 +16,7 @@ export type Tap =
   | { kind: 'ground'; x: number; y: number };
 
 const INK = 0x2a2344;
-const SHOT_COLOR: Record<TowerTypeId, number> = { canon: 0xff7a5c, givre: 0x5ad7ff, baliste: 0xffa63d };
-/** Taille à l'écran de chaque ennemi, en cases. */
-const ENEMY_SIZE: Record<string, number> = { grunt: 0.82, runner: 0.86, brute: 1.05, bouclier: 0.95, colosse: 1.9, reine: 1.8 };
+const SHOT_COLOR: Record<TowerTypeId, number> = { canon: 0xff7a5c, givre: 0x5ad7ff, baliste: 0xffa63d, foudre: 0xc9a2ff, laser: 0xff4d8d, relais: 0x7dffc0 };
 /** Hauteur de la tête d'une tourelle au-dessus du centre de sa case, en cases. */
 /** Vue de dessus : la tête de la tourelle est centrée sur son socle. */
 const HEAD_LIFT = 0;
@@ -43,6 +41,8 @@ interface Fx {
   max: number;
   splash?: number;
   seed?: number;
+  /** Rebonds de la foudre, à plat [x, y, x, y, …] (en cases). */
+  pts?: number[];
 }
 
 /** Centre d'une case, en unités du monde. Les coordonnées de la simulation sont en cases. */
@@ -88,6 +88,16 @@ export class GameScene extends Phaser.Scene {
 
   preload() {
     for (const [key, art] of Object.entries(ART)) this.load.svg(key, art.url, { width: art.size, height: art.size });
+  }
+
+  /** Efface la sélection et les effets en cours (nouvelle partie, retour à l'accueil). */
+  reset() {
+    this.selectedTower = null;
+    this.selectedSlot = null;
+    this.armed = null;
+    this.fx = [];
+    this.buffer = [];
+    this.prev = this.cur = null;
   }
 
   setMap(map: GameMap) {
@@ -360,7 +370,9 @@ export class GameScene extends Phaser.Scene {
     for (const e of events) {
       if (e.t === 'shot') {
         // Le projectile est purement visuel : il part de la tête de la tourelle vers la cible.
-        this.fx.push({ kind: 'shot', tower: e.kind, x1: e.fx, y1: e.fy - HEAD_LIFT, x2: e.tx, y2: e.ty, r: 0, color: SHOT_COLOR[e.kind], life: 0.14, max: 0.14, splash: e.splash });
+        // La foudre et le rayon sont des traits continus un peu plus longs ; les autres tirs sont des projectiles rapides.
+        const life = e.kind === 'foudre' ? 0.2 : e.kind === 'laser' ? 0.13 : 0.14;
+        this.fx.push({ kind: 'shot', tower: e.kind, x1: e.fx, y1: e.fy - HEAD_LIFT, x2: e.tx, y2: e.ty, r: 0, color: SHOT_COLOR[e.kind], life, max: life, splash: e.splash, pts: e.chain, seed: (e.fx * 31 + e.fy * 17 + e.tx * 7 + e.ty * 3) | 0 });
         for (const [id, view] of this.towers) {
           const t = state.towers.find((q) => q.id === id);
           if (t && t.x === e.fx && t.y === e.fy) {
@@ -375,6 +387,11 @@ export class GameScene extends Phaser.Scene {
         if (e.id === 'foudre') this.fx.push({ kind: 'bolt', x1: e.x, y1: e.y, x2: 0, y2: 0, r: e.radius, color: 0xfff36b, life: 0.45, max: 0.45, seed: e.x * 13 + e.y });
         else ring(e.x, e.y, e.radius, e.id === 'ralentir' ? 0x5ad7ff : 0xffd84a, 0.7);
       } else if (e.t === 'hit') ring(e.x, e.y, 0.55, 0xff5d5d, 0.25);
+      else if (e.t === 'heal') ring(e.x, e.y, e.radius, 0x7dffc0, 0.6);
+      else if (e.t === 'blast') {
+        ring(e.x, e.y, e.radius, 0xff8a3d, 0.4);
+        this.fx.push({ kind: 'burst', x1: e.x, y1: e.y, x2: 0, y2: 0, r: e.radius * 1.4, color: 0xff5d3d, life: 0.45, max: 0.45, seed: (e.x * 13 + e.y) % 7 });
+      }
     }
     if (this.fx.length > 300) this.fx.splice(0, this.fx.length - 300);
   }
@@ -440,6 +457,15 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle(0xffffff, 0.14).fillCircle(px(sel.x), px(sel.y), st.range * TILE);
       g.lineStyle(3, 0xffffff, 0.9).strokeCircle(px(sel.x), px(sel.y), st.range * TILE);
       if (st.minRange > 0) g.lineStyle(2, 0xff5d5d, 0.8).strokeCircle(px(sel.x), px(sel.y), st.minRange * TILE);
+      // Relais : zone d'effet de l'aura, et les tours qu'elle touche.
+      const aura = baseTowerStats(sel).auraRadius;
+      if (aura > 0) {
+        g.fillStyle(0x7dffc0, 0.12).fillCircle(px(sel.x), px(sel.y), aura * TILE);
+        g.lineStyle(3, 0x7dffc0, 0.9).strokeCircle(px(sel.x), px(sel.y), aura * TILE);
+        for (const o of s.towers) {
+          if (o.id !== sel.id && Math.hypot(o.x - sel.x, o.y - sel.y) <= aura) g.lineStyle(3, 0x7dffc0, 0.9).strokeCircle(px(o.x), px(o.y), TILE * 0.6);
+        }
+      }
     }
 
     // ---- tourelles
@@ -448,8 +474,9 @@ export class GameScene extends Phaser.Scene {
       seenTowers.add(tw.id);
       let view = this.towers.get(tw.id);
       if (!view) {
-        const base = this.sprite(tw.type === 'givre' ? 'givre' : `${tw.type}_base`, tw.x, tw.y, 1);
-        const head = tw.type === 'givre' ? null : this.add.image(0, 0, `${tw.type}_head`).setOrigin(0.5, 0.5);
+        const headless = HEADLESS_TOWERS.has(tw.type);
+        const base = this.sprite(headless ? tw.type : `${tw.type}_base`, tw.x, tw.y, 1);
+        const head = headless ? null : this.add.image(0, 0, `${tw.type}_head`).setOrigin(0.5, 0.5);
         view = { base, head, angle: 0, aim: 0, kick: 0 };
         this.towers.set(tw.id, view);
       }
@@ -458,7 +485,7 @@ export class GameScene extends Phaser.Scene {
       const tier = 1 + 0.09 * tw.path.length;
       const dead = tw.hp <= 0;
       const alpha = tw.disabledFor > 0 ? 0.55 : 1;
-      const pulse = tw.type === 'givre' && !dead ? 1 + Math.sin(t * 3 + tw.id) * 0.03 : 1;
+      const pulse = HEADLESS_TOWERS.has(tw.type) && !dead ? 1 + Math.sin(t * (tw.type === 'foudre' ? 7 : 3) + tw.id) * (tw.type === 'foudre' ? 0.04 : 0.03) : 1;
       view.base.setPosition(x, y).setDisplaySize(1.02 * TILE * tier * pulse, 1.02 * TILE * tier * pulse).setAlpha(alpha).setDepth(110);
       if (dead) view.base.setTint(0x66667a);
       else view.base.clearTint();
@@ -521,7 +548,8 @@ export class GameScene extends Phaser.Scene {
       const p = prevEnemies.get(e.id);
       const x = px(lerp(p?.x, e.x));
       const y = px(lerp(p?.y, e.y));
-      const size = (ENEMY_SIZE[e.type] ?? 0.8) * TILE;
+      const edef = ENEMIES[e.type];
+      const size = edef.size * TILE;
       let img = this.enemies.get(e.id);
       if (!img) {
         img = this.add.image(x, y, e.type).setOrigin(0.5, 0.5);
@@ -535,6 +563,7 @@ export class GameScene extends Phaser.Scene {
       img.setPosition(x, y).setDisplaySize(size * (1 + wob * 0.03), size * (1 - wob * 0.04)).setDepth(boss ? 141 : 140);
       if (e.slowFor > 0) img.setTint(0x9fdcff);
       else img.clearTint();
+      if (edef.heals) g.fillStyle(0x7dffc0, 0.07).fillCircle(x, y, edef.heals.radius * TILE).lineStyle(2, 0x7dffc0, 0.35).strokeCircle(x, y, edef.heals.radius * TILE);
       if (e.shield > 0) {
         g.fillStyle(0x8be6ff, 0.22).fillCircle(x, y, size * 0.6);
         g.lineStyle(3, 0xd8f6ff, 0.9).strokeCircle(x, y, size * 0.6);
@@ -620,7 +649,45 @@ export class GameScene extends Phaser.Scene {
     for (const e of this.fx) {
       e.life -= dt;
       const k = 1 - Math.max(0, e.life) / e.max; // 0 -> 1
-      if (e.kind === 'shot') {
+      if (e.kind === 'shot' && (e.tower === 'foudre' || e.tower === 'laser')) {
+        const fade = 1 - k * 0.7;
+        if (e.tower === 'laser') {
+          // Rayon : un trait net de la tourelle à la cible, avec un point chaud à l'impact.
+          const ax = px(e.x1), ay = px(e.y1), bx = px(e.x2), by = px(e.y2);
+          f.lineStyle(9, INK, fade).lineBetween(ax, ay, bx, by);
+          f.lineStyle(5, e.color, fade).lineBetween(ax, ay, bx, by);
+          f.lineStyle(2, 0xffffff, fade).lineBetween(ax, ay, bx, by);
+          f.fillStyle(0xffffff, fade).fillCircle(bx, by, 5);
+        } else {
+          // Foudre : zigzag de la tour vers la cible puis de rebond en rebond ; il scintille un peu à chaque image.
+          const chain = [e.x1, e.y1, e.x2, e.y2, ...(e.pts ?? [])];
+          const zig = new Rng(((e.seed ?? 1) + Math.floor(e.life * 40)) | 0);
+          const path: number[][] = [[px(chain[0]), px(chain[1])]];
+          for (let i = 2; i < chain.length; i += 2) {
+            const ax = path[path.length - 1][0], ay = path[path.length - 1][1];
+            const bx = px(chain[i]), by = px(chain[i + 1]);
+            const len = Math.hypot(bx - ax, by - ay) || 1;
+            const nx = -(by - ay) / len, ny = (bx - ax) / len;
+            const n = Math.max(2, Math.round(len / 18));
+            for (let j = 1; j < n; j++) {
+              const off = zig.int(-7, 7);
+              path.push([ax + ((bx - ax) * j) / n + nx * off, ay + ((by - ay) * j) / n + ny * off]);
+            }
+            path.push([bx, by]);
+          }
+          for (const [w, c] of [[8, INK], [4.5, e.color], [1.8, 0xffffff]] as [number, number][]) {
+            f.lineStyle(w, c, fade);
+            f.beginPath().moveTo(path[0][0], path[0][1]);
+            for (const p of path.slice(1)) f.lineTo(p[0], p[1]);
+            f.strokePath();
+          }
+        }
+        if (e.life <= 0) {
+          next.push({ kind: 'burst', x1: e.x2, y1: e.y2, x2: 0, y2: 0, r: 0.35, color: e.color, life: 0.22, max: 0.22, seed: 1 });
+          for (let i = 0; e.pts && i < e.pts.length; i += 2) next.push({ kind: 'burst', x1: e.pts[i], y1: e.pts[i + 1], x2: 0, y2: 0, r: 0.28, color: e.color, life: 0.2, max: 0.2, seed: i });
+          if (e.splash) next.push({ kind: 'ring', x1: e.x2, y1: e.y2, x2: 0, y2: 0, r: e.splash, color: e.color, life: 0.3, max: 0.3 });
+        }
+      } else if (e.kind === 'shot') {
         const x = px(e.x1 + (e.x2 - e.x1) * k);
         const y = px(e.y1 + (e.y2 - e.y1) * k);
         const ang = Math.atan2(e.y2 - e.y1, e.x2 - e.x1);

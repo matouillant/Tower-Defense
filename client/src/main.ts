@@ -2,6 +2,7 @@ import {
   ABILITIES,
   AbilityId,
   Command,
+  ENEMIES,
   GAME_CONFIG as G,
   GameEvent,
   GameMap,
@@ -13,7 +14,10 @@ import {
   Role,
   ServerMessage,
   TOWERS,
+  TowerDef,
   TowerState,
+  TowerStats,
+  UpgradeNode,
   TowerTypeId,
   availableHeroUpgrades,
   availableUpgrades,
@@ -30,7 +34,7 @@ import {
 import '@fontsource/exo-2/500.css';
 import '@fontsource/exo-2/600.css';
 import '@fontsource/exo-2/800.css';
-import { ART } from './art';
+import { ART, towerIcon } from './art';
 import { Net, loadSession, saveSession } from './net';
 import { GameScene, Tap, createGame } from './scene';
 
@@ -51,6 +55,10 @@ let panel: { kind: 'tower'; id: number } | { kind: 'slot'; id: number } | { kind
 /** Tour en cours de déplacement : le prochain emplacement libre touché la reçoit. */
 let movingTower: number | null = null;
 let aiPanelOpen = false;
+/** Arbre d'amélioration affiché en grand : le type de tour, et la tour concernée (pour montrer sa voie). */
+let treeView: { type: TowerTypeId; towerId?: number } | null = null;
+/** Action sensible en attente d'une seconde pression pour être confirmée (quitter, relancer). */
+let confirming: { act: string; at: number } | null = null;
 
 /** Mêmes conditions que dans style.css : panneau latéral (téléphone couché) ou en bas (téléphone debout). */
 const SIDE_SHEET = matchMedia('(orientation: landscape) and (max-height: 520px)');
@@ -61,6 +69,48 @@ let aiShownAt = 0;
 const speedLabel = (v: number) => `x${String(v).replace('.', ',')}`;
 
 const cmd = (c: Command) => net.send({ m: 'cmd', cmd: c });
+
+// ---------------------------------------------------------------- plein écran
+const anyDoc = document as Document & { webkitFullscreenEnabled?: boolean; webkitFullscreenElement?: Element; webkitExitFullscreen?: () => Promise<void> };
+const anyRoot = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+/** Le plein écran existe sur ordinateur, tablette et Android ; pas sur iPhone (Safari), où l'on installe le jeu sur l'écran d'accueil. */
+const canFullscreen = !!(document.fullscreenEnabled || anyDoc.webkitFullscreenEnabled);
+const isFullscreen = () => !!(document.fullscreenElement || anyDoc.webkitFullscreenElement);
+const isStandalone = matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+const isIPhone = /iPhone|iPod/.test(navigator.userAgent);
+async function toggleFullscreen() {
+  try {
+    if (isFullscreen()) await (document.exitFullscreen?.() ?? anyDoc.webkitExitFullscreen?.());
+    else await (anyRoot.requestFullscreen?.({ navigationUI: 'hide' }) ?? anyRoot.webkitRequestFullscreen?.());
+  } catch {
+    toast('Plein écran indisponible ici.', 'err');
+  }
+}
+const fsLabel = () => (isFullscreen() ? 'Quitter le plein écran' : 'Plein écran');
+const onFullscreenChange = () => {
+  if (state) renderGame();
+  else renderLobby();
+};
+document.addEventListener('fullscreenchange', onFullscreenChange);
+document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+
+/** Deux pressions à moins de 4 secondes : évite de quitter ou de relancer une partie par mégarde. */
+function confirmed(act: string): boolean {
+  const now = performance.now();
+  if (confirming && confirming.act === act && now - confirming.at < 4000) {
+    confirming = null;
+    return true;
+  }
+  confirming = { act, at: now };
+  setTimeout(() => {
+    if (confirming && confirming.act === act && performance.now() - confirming.at >= 3900) {
+      confirming = null;
+      if (state) renderGame();
+    }
+  }, 4000);
+  return false;
+}
+const confirmLabel = (act: string, label: string) => (confirming?.act === act ? 'Confirmer ?' : label);
 
 let lastToast = '';
 let lastToastAt = 0;
@@ -127,7 +177,7 @@ function renderLobby() {
         <small>Laisse vide pour une carte aléatoire. La même seed redonne la même carte.</small>
         <button class="primary" data-act="create">Créer</button>
       </div>
-      ${online ? '' : '<p class="muted">Connexion au serveur…</p>'}`,
+      ${online ? '' : '<p class="muted">Connexion au serveur…</p>'}${fsButton()}`,
     );
     return;
   }
@@ -152,8 +202,16 @@ function renderLobby() {
     <div class="card"><b>Joueurs</b>${slots}
       <small>Si personne ne prend le héros, l'IA le joue. Un ami peut la remplacer en cours de partie avec le code.</small>
     </div>
-    ${role === 'strategist' ? '<button class="primary" data-act="start">Lancer la partie</button>' : '<p class="muted">En attente du stratège pour lancer la partie.</p>'}`,
+    ${role === 'strategist' ? '<button class="primary" data-act="start">Lancer la partie</button>' : '<p class="muted">En attente du stratège pour lancer la partie.</p>'}
+    <button data-act="home">Quitter ce salon</button>${fsButton()}`,
   );
+}
+
+/** Bouton plein écran de l'accueil ; sur iPhone, un conseil pour installer le jeu. */
+function fsButton(): string {
+  if (canFullscreen) return `<button data-act="fullscreen">${fsLabel()}</button>`;
+  if (isIPhone && !isStandalone) return `<p class="muted">Pour jouer en plein écran sur iPhone : bouton Partager, puis « Sur l’écran d’accueil ».</p>`;
+  return '';
 }
 
 $('lobby').addEventListener('click', (ev) => {
@@ -174,8 +232,56 @@ $('lobby').addEventListener('click', (ev) => {
   else if (act === 'take') net.send({ m: 'take', role: btn.dataset.role as Role });
   else if (act === 'release') net.send({ m: 'release' });
   else if (act === 'start') net.send({ m: 'start' });
+  else if (act === 'fullscreen') toggleFullscreen();
+  else if (act === 'home') goHome();
 });
 let pendingName = 'Joueur';
+
+// ---------------------------------------------------------------- accueil et nouvelle partie
+
+/** Retour à l'écran d'accueil : on quitte le salon (le héros repasse à l'IA) et on repart de zéro. */
+function goHome() {
+  net.send({ m: 'leave' });
+  net.disconnect();
+  saveSession(null);
+  state = null;
+  lobby = null;
+  role = null;
+  panel = null;
+  movingTower = null;
+  aiPanelOpen = false;
+  treeView = null;
+  confirming = null;
+  scene?.reset();
+  $('game').hidden = true;
+  $('modal').hidden = true;
+  $('lobby').hidden = false;
+  history.replaceState(null, '', '/');
+  renderLobby();
+}
+
+/** Les types d'ennemis déjà rencontrés (mémorisés sur l'appareil) : le premier de chaque type est présenté à l'écran. */
+const SEEN_KEY = 'td:seenEnemies';
+const seenEnemies = new Set<string>((() => {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+})());
+function announceNewEnemies(s: GameState) {
+  for (const e of s.enemies) {
+    if (seenEnemies.has(e.type)) continue;
+    seenEnemies.add(e.type);
+    try {
+      localStorage.setItem(SEEN_KEY, JSON.stringify([...seenEnemies]));
+    } catch {
+      /* stockage indisponible : on annoncera de nouveau la prochaine fois */
+    }
+    const d = ENEMIES[e.type];
+    if (e.type !== 'grunt') toast(`${d.boss ? 'Boss' : 'Nouveau'} : ${d.name}. ${d.desc}`, 'info');
+  }
+}
 
 // ---------------------------------------------------------------- réseau
 
@@ -205,6 +311,14 @@ net.onMessage = (msg: ServerMessage) => {
       break;
     case 'started':
       map = msg.map;
+      // Nouvelle partie (première, ou relancée dans le même salon) : on repart d'un affichage vierge.
+      state = null;
+      panel = null;
+      movingTower = null;
+      aiPanelOpen = false;
+      treeView = null;
+      confirming = null;
+      scene?.reset();
       $('lobby').hidden = true;
       $('game').hidden = false;
       if (!scene) {
@@ -217,6 +331,7 @@ net.onMessage = (msg: ServerMessage) => {
       break;
     case 'state':
       state = msg.state;
+      announceNewEnemies(msg.state);
       scene?.pushState(msg.state, msg.events);
       for (const e of msg.events) onEvent(e);
       renderGame();
@@ -311,7 +426,7 @@ function renderGame() {
     `${pill('wave', '', `<span class="l">Vague </span><span class="s">V</span><b>${s.wave}</b>`)}
      ${pill('heart', '<i>♥</i>', `<b>${s.baseHp}</b>`)}${pill('scrap', bolt, `<b>${Math.floor(s.scrap)}</b>`)}
      ${pill('hero', `<img src="${ART.hero.url}" alt="" />`, `<span class="l">${s.heroController === 'ai' ? 'IA · ' : ''}</span>${heroLine}`)}
-     <span class="grow"></span>${role ? `<button data-act="pause" class="pause-btn ${lobby.paused ? 'on' : ''}" title="Pause (touche P ou Espace)">${lobby.paused ? '▶' : '❚❚'}</button>` : ''}<span class="speed">${speedBtns}</span>${speedCycle}`,
+     <span class="grow"></span>${canFullscreen ? `<button data-act="fullscreen" class="fs-btn ${isFullscreen() ? 'on' : ''}" title="${fsLabel()} (touche F)">⛶</button>` : ''}${role ? `<button data-act="pause" class="pause-btn ${lobby.paused ? 'on' : ''}" title="Pause (touche P ou Espace)">${lobby.paused ? '▶' : '❚❚'}</button>` : ''}<span class="speed">${speedBtns}</span>${speedCycle}`,
   );
   // Bulle de l'IA, en bas de la carte, sans rien décaler. Visible pour le stratège, qui la pilote.
   const aiText = s.heroController === 'ai' && role === 'strategist' ? s.ai.message : '';
@@ -359,11 +474,35 @@ function renderBar(s: GameState) {
     html += `<button data-act="deliver">Rentrer à la base</button><button data-act="stop">Stop</button><button data-act="heroTree">Améliorations</button>`;
   }
   if (scene?.canPan() || scene?.zoomedOut()) html += `<button data-act="overview">${scene.canPan() ? 'Vue d’ensemble' : 'Zoomer'}</button>`;
-  html += `<button data-act="menu">Partie ${lobby!.code}</button>`;
+  html += `<button data-act="menu" class="${panel?.kind === 'menu' ? 'on' : ''}">Menu</button>`;
   render($('bar'), html);
 }
 
 const pct = (v: number) => `${Math.round(v * 100)} %`;
+const fmt = (v: number) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
+
+/** Les caractéristiques utiles d'une tour, en une phrase : dégâts, effets spéciaux, aura, production. */
+function statBits(st: TowerStats): string[] {
+  const bits: string[] = [];
+  if (st.damage > 0) bits.push(`dégâts ${fmt(st.damage)}`, `portée ${st.range.toFixed(1)}`, `un tir toutes les ${st.cooldown.toFixed(2)} s`);
+  if (st.splash > 0) bits.push(`zone ${st.splash.toFixed(1)}`);
+  if (st.chain > 0) bits.push(`${st.chain} rebond${st.chain > 1 ? 's' : ''}`);
+  if (st.ramp > 0) bits.push(`monte jusqu’à +${Math.round(st.ramp * st.rampMax * 100)} % sur une même cible`);
+  if (st.critChance > 0) bits.push(`${pct(st.critChance)} de critiques (×${fmt(st.critMult)})`);
+  if (st.pierceShield) bits.push('perce boucliers et armures');
+  if (st.slow > 0) bits.push(`ralentit de ${pct(st.slow)}`);
+  if (st.dot > 0) bits.push(`brûlure ${fmt(st.dot)}/s`);
+  if (st.auraRadius > 0) {
+    const a: string[] = [];
+    if (st.auraDamage > 0) a.push(`dégâts +${pct(st.auraDamage)}`);
+    if (st.auraRate > 0) a.push(`cadence +${pct(st.auraRate)}`);
+    if (st.auraReach > 0) a.push(`portée +${fmt(st.auraReach)}`);
+    if (st.auraHeal > 0) a.push(`répare ${fmt(st.auraHeal)} PV/s`);
+    if (a.length) bits.push(`voisines (${fmt(st.auraRadius)} cases) : ${a.join(', ')}`);
+  }
+  if (st.income > 0) bits.push(`produit ${st.income.toFixed(1)} ressource/s`);
+  return bits;
+}
 
 function towerPanel(s: GameState, t: TowerState): string {
   const def = TOWERS[t.type];
@@ -373,7 +512,7 @@ function towerPanel(s: GameState, t: TowerState): string {
   const ammoMax = baseTowerStats(t).ammo;
   let html = `<div class="panel-head"><h3>${def.name}${names.length ? ' › ' + names.join(' › ') : ''}</h3><button data-act="close">✕</button></div>
     <div>PV ${Math.ceil(t.hp)}/${Math.ceil(max)}${t.maxHpFactor < 1 ? ` <span class="muted">(usure ${pct(1 - t.maxHpFactor)})</span>` : ''}
-    · dégâts ${Math.round(st.damage)} · portée ${st.range.toFixed(1)} · un tir toutes les ${st.cooldown.toFixed(2)} s${ammoMax > 0 ? ` · munitions ${t.ammo}/${ammoMax}` : ''}</div>`;
+    · ${statBits(st).join(' · ')}${ammoMax > 0 ? ` · munitions ${t.ammo}/${ammoMax}` : ''}</div>`;
 
   if (role === 'hero') {
     const cap = s.phase === 'wave' ? max * G.quickRepairCap : max;
@@ -387,12 +526,13 @@ function towerPanel(s: GameState, t: TowerState): string {
   }
 
   const ups = availableUpgrades(t);
-  html += `<div class="section">Améliorations (une seule voie possible)</div>`;
+  html += `<div class="section">Améliorations (une seule voie possible) <button class="mini" data-act="tree" data-id="${t.type}">Voir l’arbre</button></div>`;
   html += ups.length
     ? `<div class="grid">${ups.map((n) => `<button data-act="upgrade" data-id="${n.id}" ${s.scrap < n.cost ? 'disabled' : ''}><b>${n.name}</b> · ${n.cost}<small>${n.desc}</small></button>`).join('')}</div>`
     : `<div class="muted">Arbre terminé.</div>`;
   const modes = [['first', 'Le plus avancé'], ['strong', 'Le plus fort'], ['weak', 'Le plus faible'], ['fast', 'Le plus rapide']];
-  html += `<div class="section">Cible</div><div class="chips">${modes.map(([m, l]) => `<button data-act="targeting" data-id="${m}" class="${t.targeting === m ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  // Un relais ne tire pas : le choix de cible n'a pas de sens pour lui.
+  if (st.damage > 0) html += `<div class="section">Cible</div><div class="chips">${modes.map(([m, l]) => `<button data-act="targeting" data-id="${m}" class="${t.targeting === m ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   if (s.heroController === 'ai') {
     const prios = [['high', 'Prioritaire'], ['normal', 'Normale'], ['sacrifice', 'À sacrifier']];
     html += `<div class="section">Consigne pour l'IA</div><div class="chips">${prios.map(([p, l]) => `<button data-act="priority" data-id="${p}" class="${t.aiPriority === p ? 'on' : ''}">${l}</button>`).join('')}
@@ -424,9 +564,46 @@ function menuPanel(s: GameState): string {
       return `<div class="field"><span><b>${ROLE_NAME[sl.role]}</b> · ${who}</span>${btn}</div>`;
     })
     .join('');
-  return `<div class="panel-head"><h3>Partie ${lobby!.code}</h3><button data-act="close">✕</button></div>
-    ${slots}<div class="chips"><button data-act="share">Inviter un joueur</button></div>
+  // Relancer : le stratège à tout moment, les autres joueurs seulement une fois la base tombée.
+  const canRestart = role !== null && (role === 'strategist' || s.phase === 'over');
+  return `<div class="panel-head"><h3>Menu · partie ${lobby!.code}</h3><button data-act="close">✕</button></div>
+    ${slots}<div class="chips"><button data-act="share">Inviter un joueur</button>${canFullscreen ? `<button data-act="fullscreen">${fsLabel()}</button>` : ''}</div>
+    <div class="section">Partie</div>
+    <div class="chips">
+      ${canRestart ? `<button data-act="restart">${confirmLabel('restart', 'Rejouer · nouvelle carte')}</button><button data-act="restartSame">${confirmLabel('restartSame', 'Rejouer · même carte')}</button>` : ''}
+      <button class="danger" data-act="home">${confirmLabel('home', 'Quitter vers l’accueil')}</button>
+    </div>
+    ${isIPhone && !isStandalone ? '<small>Plein écran sur iPhone : bouton Partager de Safari, puis « Sur l’écran d’accueil ».</small>' : ''}
     <small>Seed de la carte : ${lobby!.seed} · score : vague ${s.wave}</small>`;
+}
+
+/** Arbre d'amélioration complet d'un type de tour. Avec une tour précise, on voit sa voie et ce qu'elle peut encore acheter. */
+function treeModal(type: TowerTypeId, towerId?: number): string {
+  const def: TowerDef = TOWERS[type];
+  const tower = towerId !== undefined ? state?.towers.find((t) => t.id === towerId && t.type === type) : undefined;
+  const path = tower?.path ?? [];
+  const last = path.length ? path[path.length - 1] : null;
+  const pathTo = (id: string): string[] => {
+    const out: string[] = [];
+    for (let n: UpgradeNode | undefined = def.nodes.find((x) => x.id === id); n; n = n.parent ? def.nodes.find((x) => x.id === n!.parent) : undefined) out.unshift(n.id);
+    return out;
+  };
+  const branch = (parent: string | null, depth: number): string => {
+    const kids = def.nodes.filter((n) => n.parent === parent);
+    if (!kids.length) return '';
+    return `<ul>${kids
+      .map((n) => {
+        const cls = !tower ? '' : path.includes(n.id) ? 'chosen' : n.parent === last ? 'next' : 'locked';
+        const bits = statBits(baseTowerStats({ type, path: pathTo(n.id) })).join(' · ');
+        return `<li class="${cls}"><div class="n"><span class="lv">N${depth + 1}</span><b>${n.name}</b> <i>${n.cost}</i><small>${n.desc}</small><small class="bits">${bits}</small></div>${branch(n.id, depth + 1)}</li>`;
+      })
+      .join('')}</ul>`;
+  };
+  const baseBits = statBits(def.base).join(' · ');
+  return `<div class="box tree"><div class="panel-head"><h3>${def.name}</h3><button data-act="treeClose">✕</button></div>
+    <p class="muted">${def.desc} Une seule voie par tour : choisir une branche ferme les autres du même niveau.${tower ? ' <b>Vert</b> : ta voie · <b>jaune</b> : prochain achat · <b>grisé</b> : fermé.' : ''}</p>
+    <div class="root"><span class="lv">N1</span><b>${def.name}</b> <i>${def.cost}</i><small class="bits">${baseBits}</small></div>
+    <div class="tree-scroll">${branch(null, 1)}</div></div>`;
 }
 
 function renderPanel(s: GameState) {
@@ -441,8 +618,9 @@ function renderPanel(s: GameState) {
     else {
       const high = map!.slots[panel.id].high;
       html = `<div class="panel-head"><h3>Construire${high ? ' (point haut : +20 % de portée)' : ''}</h3><button data-act="close">✕</button></div><div class="grid">${(Object.keys(TOWERS) as TowerTypeId[])
-        .map((id) => `<button class="build" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${ART[id === 'givre' ? 'givre' : id + '_head'].url}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${TOWERS[id].desc}</small></span></button>`)
-        .join('')}</div>`;
+        .map((id) => `<button class="build" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${towerIcon(id)}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${TOWERS[id].desc}</small></span></button>`)
+        .join('')}</div>
+        <div class="section">Arbres d’amélioration</div><div class="chips">${(Object.keys(TOWERS) as TowerTypeId[]).map((id) => `<button class="mini" data-act="tree" data-id="${id}">${TOWERS[id].name}</button>`).join('')}</div>`;
     }
   } else if (panel?.kind === 'deposit') {
     html = `<div class="panel-head"><h3>Gisement (${s.deposits[panel.id]} restant)</h3><button data-act="close">✕</button></div>
@@ -494,12 +672,15 @@ function renderModal(s: GameState) {
   let html = '';
   if (s.phase === 'over') {
     html = `<div class="box"><h2>La base est tombée</h2><p>Vous avez tenu <b>${Math.max(0, s.wave - 1)}</b> vague${s.wave - 1 > 1 ? 's' : ''} · ${s.bossesKilled} boss vaincu${s.bossesKilled > 1 ? 's' : ''}.</p>
-      <p class="muted">Seed de la carte : ${lobby!.seed}</p><button class="primary" data-act="again">Nouvelle partie</button></div>`;
+      <p class="muted">Seed de la carte : ${lobby!.seed}</p>
+      <div class="stack">${role ? `<button class="primary" data-act="restart">Rejouer · nouvelle carte</button><button data-act="restartSame">Rejouer · même carte</button>` : '<p class="muted">Un joueur du salon peut relancer la partie.</p>'}
+      <button data-act="home">Retour à l’accueil</button></div></div>`;
   } else if (s.rewardChoices && role === 'strategist') {
     html = `<div class="box"><h2>Boss vaincu !</h2><p>Choisis une récompense :</p><div class="grid">${s.rewardChoices
       .map((id) => `<button data-act="reward" data-id="${id}"><b>${REWARDS[id].name}</b><small>${REWARDS[id].desc}</small></button>`)
       .join('')}</div></div>`;
   }
+  else if (treeView) html = treeModal(treeView.type, treeView.towerId);
   el.hidden = html === '';
   render(el, html);
 }
@@ -508,6 +689,8 @@ function renderModal(s: GameState) {
 $('game').addEventListener('pointerdown', (ev) => {
   const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-act]');
   if (!btn || btn.disabled || !state) return;
+  // Le plein écran exige un « vrai » geste : il est traité sur le clic, pas sur l'appui.
+  if (btn.dataset.act === 'fullscreen') return;
   ev.preventDefault();
   const id = btn.dataset.id ?? '';
   const towerId = panel?.kind === 'tower' ? panel.id : -1;
@@ -552,18 +735,35 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'take': net.send({ m: 'take', role: id as Role }); return select(null);
     case 'release': net.send({ m: 'release' }); return select(null);
     case 'share': share(lobby!.code); break;
-    case 'again': saveSession(null); location.href = '/'; return;
+    case 'tree': treeView = { type: id as TowerTypeId, towerId: panel?.kind === 'tower' ? panel.id : undefined }; break;
+    case 'treeClose': treeView = null; break;
+    case 'restart':
+    case 'restartSame':
+      // En cours de partie, il faut confirmer ; une fois la base tombée, c'est direct.
+      if (state.phase !== 'over' && !confirmed(btn.dataset.act)) break;
+      net.send({ m: 'restart', sameMap: btn.dataset.act === 'restartSame' });
+      return select(null);
+    case 'home':
+      if (state.phase !== 'over' && !confirmed('home')) break;
+      return goHome();
   }
   renderGame();
 });
 
-// Clavier (ordinateur) : P ou Espace pour la pause, Échap pour fermer un panneau.
+$('game').addEventListener('click', (ev) => {
+  if ((ev.target as HTMLElement).closest('[data-act="fullscreen"]')) toggleFullscreen();
+});
+
+// Clavier (ordinateur) : P ou Espace pour la pause, F pour le plein écran, Échap pour fermer un panneau.
 window.addEventListener('keydown', (ev) => {
   if (!state || !lobby?.started || (ev.target as HTMLElement).tagName === 'INPUT') return;
   if (ev.key === 'p' || ev.key === 'P' || ev.key === ' ') {
     ev.preventDefault();
     if (role) net.send({ m: 'pause', on: !lobby.paused });
+  } else if (ev.key === 'f' || ev.key === 'F') {
+    if (canFullscreen) toggleFullscreen();
   } else if (ev.key === 'Escape') {
+    treeView = null;
     movingTower = null;
     if (scene) scene.armed = null;
     select(null);
