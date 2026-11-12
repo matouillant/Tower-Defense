@@ -19,6 +19,8 @@ export interface TowerState {
   maxHpFactor: number;
   /** Nœuds d'amélioration choisis, dans l'ordre. */
   path: string[];
+  /** Niveau de l'amélioration de portée (0 à RANGE_UPGRADE.maxLevel). */
+  rangeLvl: number;
   /** Total dépensé dans la tour (construction + améliorations). */
   invested: number;
   cooldown: number;

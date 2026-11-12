@@ -8,6 +8,8 @@ import {
   GameMap,
   GameState,
   HERO_NODES,
+  RANGE_UPGRADE,
+  rangeUpgradeCost,
   LobbyState,
   REWARDS,
   SPEEDS,
@@ -351,7 +353,19 @@ function onEvent(e: GameEvent) {
 
 // ---------------------------------------------------------------- interactions sur la carte
 
+/** Aperçu de portée avant la pose : id de la tour survolée (souris) ou touchée une première fois (tactile). */
+let previewType: TowerTypeId | null = null;
+let previewByTouch = false;
+function setPreview(id: TowerTypeId | null) {
+  previewType = id;
+  if (!scene) return;
+  if (!id) { scene.previewRange = null; return; }
+  const b = TOWERS[id].base;
+  scene.previewRange = b.range > 0 ? { range: b.range, aura: false } : { range: b.auraRadius, aura: true };
+}
+
 function select(next: typeof panel) {
+  setPreview(null);
   panel = next;
   aiPanelOpen = false;
   if (scene) {
@@ -527,8 +541,14 @@ function towerPanel(s: GameState, t: TowerState): string {
 
   const ups = availableUpgrades(t);
   html += `<div class="section">Améliorations (une seule voie possible) <button class="mini" data-act="tree" data-id="${t.type}">Voir l’arbre</button></div>`;
-  html += ups.length
-    ? `<div class="grid">${ups.map((n) => `<button data-act="upgrade" data-id="${n.id}" ${s.scrap < n.cost ? 'disabled' : ''}><b>${n.name}</b> · ${n.cost}<small>${n.desc}</small></button>`).join('')}</div>`
+  const rangeLeft = t.rangeLvl < RANGE_UPGRADE.maxLevel;
+  const rangeBtn = (def.base.range > 0 || def.base.auraRadius > 0)
+    ? rangeLeft
+      ? `<button data-act="upgrade" data-id="portee" ${s.scrap < rangeUpgradeCost(t.type, t.rangeLvl) ? 'disabled' : ''}><b>${def.base.range > 0 ? 'Portée' : 'Rayon d’aura'} +${RANGE_UPGRADE.bonus}</b> · ${rangeUpgradeCost(t.type, t.rangeLvl)}<small>Niveau ${t.rangeLvl}/${RANGE_UPGRADE.maxLevel}, cumulable avec toute voie.</small></button>`
+      : `<button disabled><b>Portée au maximum</b><small>Niveau ${t.rangeLvl}/${RANGE_UPGRADE.maxLevel}</small></button>`
+    : '';
+  html += ups.length || rangeBtn
+    ? `<div class="grid">${rangeBtn}${ups.map((n) => `<button data-act="upgrade" data-id="${n.id}" ${s.scrap < n.cost ? 'disabled' : ''}><b>${n.name}</b> · ${n.cost}<small>${n.desc}</small></button>`).join('')}</div>`
     : `<div class="muted">Arbre terminé.</div>`;
   const modes = [['first', 'Le plus avancé'], ['strong', 'Le plus fort'], ['weak', 'Le plus faible'], ['fast', 'Le plus rapide']];
   // Un relais ne tire pas : le choix de cible n'a pas de sens pour lui.
@@ -618,7 +638,7 @@ function renderPanel(s: GameState) {
     else {
       const high = map!.slots[panel.id].high;
       html = `<div class="panel-head"><h3>Construire${high ? ' (point haut : +20 % de portée)' : ''}</h3><button data-act="close">✕</button></div><div class="grid">${(Object.keys(TOWERS) as TowerTypeId[])
-        .map((id) => `<button class="build" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${towerIcon(id)}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${TOWERS[id].desc}</small></span></button>`)
+        .map((id) => `<button class="build ${previewType === id ? 'previewing' : ''}" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${towerIcon(id)}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${TOWERS[id].base.range > 0 ? `portée ${TOWERS[id].base.range}` : `aura ${TOWERS[id].base.auraRadius} cases`} · ${TOWERS[id].desc}</small>${previewType === id && previewByTouch ? '<small class="again">Touche encore pour poser</small>' : ''}</span></button>`)
         .join('')}</div>
         <div class="section">Arbres d’amélioration</div><div class="chips">${(Object.keys(TOWERS) as TowerTypeId[]).map((id) => `<button class="mini" data-act="tree" data-id="${id}">${TOWERS[id].name}</button>`).join('')}</div>`;
     }
@@ -685,6 +705,14 @@ function renderModal(s: GameState) {
   render(el, html);
 }
 
+// Souris : survoler un bouton de construction montre sa portée sur l'emplacement choisi.
+$('game').addEventListener('mouseover', (ev) => {
+  if (panel?.kind !== 'slot') return;
+  const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('button.build');
+  const id = btn?.dataset.id as TowerTypeId | undefined;
+  if (id !== (previewType ?? undefined)) { previewByTouch = false; setPreview(id ?? null); }
+});
+
 // Un seul gestionnaire pour toutes les actions de l'interface de jeu.
 $('game').addEventListener('pointerdown', (ev) => {
   const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-act]');
@@ -718,7 +746,10 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'heroTree': return select(panel?.kind === 'heroTree' ? null : { kind: 'heroTree' });
     case 'deliver': cmd({ c: 'task', task: { kind: 'deliver' } }); break;
     case 'stop': cmd({ c: 'task', task: { kind: 'idle' } }); break;
-    case 'build': if (panel?.kind === 'slot') cmd({ c: 'build', slotId: panel.id, type: id as TowerTypeId }); return select(null);
+    case 'build':
+      // Sur écran tactile, un premier appui montre la portée ; le second pose la tour.
+      if (panel?.kind === 'slot' && ev.pointerType !== 'mouse' && previewType !== id) { previewByTouch = true; setPreview(id as TowerTypeId); break; }
+      if (panel?.kind === 'slot') cmd({ c: 'build', slotId: panel.id, type: id as TowerTypeId }); return select(null);
     case 'upgrade': cmd({ c: 'upgrade', towerId, nodeId: id }); break;
     case 'targeting': cmd({ c: 'targeting', towerId, mode: id as TowerState['targeting'] }); break;
     case 'priority': cmd({ c: 'aiPriority', towerId, priority: id as TowerState['aiPriority'] }); break;

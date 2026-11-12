@@ -4,6 +4,11 @@
  */
 export type TowerTypeId = 'canon' | 'givre' | 'baliste' | 'foudre' | 'laser' | 'relais';
 
+/** Amélioration de portée : indépendante de l'arbre, achetable sur toute tour (rayon d'aura pour le relais). */
+export const RANGE_UPGRADE = { maxLevel: 3, bonus: 0.5, costRatios: [0.5, 0.8, 1.1] };
+export const rangeUpgradeCost = (type: TowerTypeId, level: number) =>
+  Math.max(5, Math.round((TOWERS[type].cost * (RANGE_UPGRADE.costRatios[level] ?? 1.1)) / 5) * 5);
+
 export interface TowerStats {
   maxHp: number;
   damage: number;

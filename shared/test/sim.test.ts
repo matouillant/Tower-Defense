@@ -338,3 +338,29 @@ describe('simulation', () => {
     });
   });
 });
+
+describe('amélioration de portée', () => {
+  it('ajoute de la portée, plafonnée à 3 niveaux, cumulable avec une voie', () => {
+    const map = generateMap(4);
+    const game = new Game(map);
+    game.state.scrap = 5000;
+    expect(game.apply('strategist', { c: 'build', slotId: map.slots[0].id, type: 'canon' })).toBeNull();
+    const t = game.state.towers[0];
+    const r0 = effectiveTowerStats(t, game.state.towers, map).range;
+    for (let i = 0; i < 3; i++) expect(game.apply('strategist', { c: 'upgrade', towerId: t.id, nodeId: 'portee' })).toBeNull();
+    expect(game.apply('strategist', { c: 'upgrade', towerId: t.id, nodeId: 'portee' })).toBeTruthy();
+    expect(effectiveTowerStats(t, game.state.towers, map).range).toBeCloseTo(r0 + 1.5, 5);
+    expect(game.apply('strategist', { c: 'upgrade', towerId: t.id, nodeId: 'precision' })).toBeNull();
+    expect(effectiveTowerStats(t, game.state.towers, map).range).toBeGreaterThan(6);
+  });
+  it('élargit l’aura d’un relais', () => {
+    const map = generateMap(4);
+    const game = new Game(map);
+    game.state.scrap = 5000;
+    game.apply('strategist', { c: 'build', slotId: map.slots[0].id, type: 'relais' });
+    const t = game.state.towers[0];
+    const a0 = baseTowerStats(t).auraRadius;
+    game.apply('strategist', { c: 'upgrade', towerId: t.id, nodeId: 'portee' });
+    expect(baseTowerStats(t).auraRadius).toBeCloseTo(a0 + 0.5, 5);
+  });
+});

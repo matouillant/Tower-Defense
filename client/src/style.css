@@ -260,3 +260,6 @@ button.on { background: linear-gradient(#5cecff, #1aa6d6); border-color: #c9f8ff
 .tree li.chosen > .n { border-color: #5fe07a; background: #0d2a1c; }
 .tree li.next > .n { border-color: #ffd84a; background: #2a2410; box-shadow: 0 0 10px #ffd84a44; }
 .tree li.locked > .n { opacity: 0.4; }
+
+button.build.previewing { border-color: var(--neon); box-shadow: 0 0 0 2px var(--neon), 0 0 14px #35e0ff66; }
+.again { color: #ffd84a; }

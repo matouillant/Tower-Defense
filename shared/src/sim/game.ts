@@ -22,7 +22,7 @@ import {
   RewardId,
 } from '../config/game';
 import { MAP_CONFIG } from '../config/map';
-import { TOWERS } from '../config/towers';
+import { RANGE_UPGRADE, rangeUpgradeCost, TOWERS } from '../config/towers';
 import type { GameMap, Vec2 } from '../map/types';
 import { Rng } from '../rng';
 import { decideHeroTask } from './ai';
@@ -858,7 +858,7 @@ export class Game {
         if (s.towers.some((t) => t.slotId === slot.id)) return 'Emplacement occupé.';
         if (!pay(def.cost)) return poor;
         s.towers.push({
-          id: this.nextId++, type: def.id, slotId: slot.id, x: slot.x, y: slot.y, hp: def.base.maxHp, maxHpFactor: 1, path: [],
+          id: this.nextId++, type: def.id, slotId: slot.id, x: slot.x, y: slot.y, hp: def.base.maxHp, maxHpFactor: 1, path: [], rangeLvl: 0,
           invested: def.cost, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0, focusId: 0, focus: 0,
         });
         return null;
@@ -866,6 +866,14 @@ export class Game {
       case 'upgrade': {
         const t = tower(cmd.towerId);
         if (!t) return 'Tour introuvable.';
+        if (cmd.nodeId === 'portee') {
+          if (t.rangeLvl >= RANGE_UPGRADE.maxLevel) return 'Portée déjà au maximum.';
+          const price = rangeUpgradeCost(t.type, t.rangeLvl);
+          if (!pay(price)) return poor;
+          t.rangeLvl += 1;
+          t.invested += price;
+          return null;
+        }
         const last = t.path.length ? t.path[t.path.length - 1] : null;
         const node = TOWERS[t.type].nodes.find((n) => n.id === cmd.nodeId);
         if (!node || node.parent !== last) return 'Amélioration indisponible : une autre voie a déjà été choisie.';

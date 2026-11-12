@@ -4072,6 +4072,8 @@ function distanceToPath(terrain, W, H) {
 }
 
 // shared/src/config/towers.ts
+var RANGE_UPGRADE = { maxLevel: 3, bonus: 0.5, costRatios: [0.5, 0.8, 1.1] };
+var rangeUpgradeCost = (type, level) => Math.max(5, Math.round(TOWERS[type].cost * (RANGE_UPGRADE.costRatios[level] ?? 1.1) / 5) * 5);
 var base = (s) => ({
   maxHp: 100,
   damage: 10,
@@ -4418,6 +4420,11 @@ function baseTowerStats(tower) {
   for (const id of tower.path) {
     const node = def.nodes.find((n) => n.id === id);
     if (node) stats = { ...stats, ...node.stats };
+  }
+  const lvl = tower.rangeLvl ?? 0;
+  if (lvl > 0) {
+    if (stats.range > 0) stats.range += lvl * RANGE_UPGRADE.bonus;
+    else if (stats.auraRadius > 0) stats.auraRadius += lvl * RANGE_UPGRADE.bonus;
   }
   return stats;
 }
@@ -5334,6 +5341,7 @@ var Game = class {
           hp: def.base.maxHp,
           maxHpFactor: 1,
           path: [],
+          rangeLvl: 0,
           invested: def.cost,
           cooldown: 0,
           ammo: def.base.ammo || -1,
@@ -5349,6 +5357,14 @@ var Game = class {
       case "upgrade": {
         const t = tower(cmd.towerId);
         if (!t) return "Tour introuvable.";
+        if (cmd.nodeId === "portee") {
+          if (t.rangeLvl >= RANGE_UPGRADE.maxLevel) return "Port\xE9e d\xE9j\xE0 au maximum.";
+          const price = rangeUpgradeCost(t.type, t.rangeLvl);
+          if (!pay(price)) return poor;
+          t.rangeLvl += 1;
+          t.invested += price;
+          return null;
+        }
         const last = t.path.length ? t.path[t.path.length - 1] : null;
         const node = TOWERS[t.type].nodes.find((n) => n.id === cmd.nodeId);
         if (!node || node.parent !== last) return "Am\xE9lioration indisponible : une autre voie a d\xE9j\xE0 \xE9t\xE9 choisie.";

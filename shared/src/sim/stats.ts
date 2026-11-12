@@ -1,18 +1,23 @@
 import { HERO_CONFIG, HERO_NODES, HeroStats } from '../config/game';
 import { MAP_CONFIG } from '../config/map';
-import { SYNERGIES, SYNERGY_RANGE, TOWERS, TowerStats, UpgradeNode } from '../config/towers';
+import { RANGE_UPGRADE, SYNERGIES, SYNERGY_RANGE, TOWERS, TowerStats, UpgradeNode } from '../config/towers';
 import type { GameMap } from '../map/types';
 import type { TowerState } from './types';
 
 export const dist = (ax: number, ay: number, bx: number, by: number) => Math.hypot(ax - bx, ay - by);
 
 /** Stats d'une tour : base + nœuds choisis (sans usure, sans synergies). */
-export function baseTowerStats(tower: Pick<TowerState, 'type' | 'path'>): TowerStats {
+export function baseTowerStats(tower: Pick<TowerState, 'type' | 'path'> & { rangeLvl?: number }): TowerStats {
   const def = TOWERS[tower.type];
   let stats = { ...def.base };
   for (const id of tower.path) {
     const node = def.nodes.find((n) => n.id === id);
     if (node) stats = { ...stats, ...node.stats };
+  }
+  const lvl = tower.rangeLvl ?? 0;
+  if (lvl > 0) {
+    if (stats.range > 0) stats.range += lvl * RANGE_UPGRADE.bonus;
+    else if (stats.auraRadius > 0) stats.auraRadius += lvl * RANGE_UPGRADE.bonus;
   }
   return stats;
 }

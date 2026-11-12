@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { ABILITIES, AbilityId, ENEMIES, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
+import { ABILITIES, AbilityId, ENEMIES, MAP_CONFIG, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
 import { ART, HEADLESS_TOWERS } from './art';
 
 export const TILE = 48;
@@ -72,6 +72,8 @@ export class GameScene extends Phaser.Scene {
   onTap: (tap: Tap, x: number, y: number) => void = () => {};
   selectedTower: number | null = null;
   selectedSlot: number | null = null;
+  /** Aperçu de portée (en cases) d'une tour qu'on envisage de poser sur l'emplacement sélectionné. */
+  previewRange: { range: number; aura: boolean } | null = null;
   /** Compétence de zone armée : le prochain appui sur la carte la lance. */
   armed: AbilityId | null = null;
   /** La caméra suit le héros (pour le joueur qui le contrôle), sauf juste après un glissement. */
@@ -449,6 +451,12 @@ export class GameScene extends Phaser.Scene {
         const r = 25 + Math.sin(t * 6) * 2;
         g.lineStyle(6, INK).strokeCircle(px(sl.x), px(sl.y), r);
         g.lineStyle(3, 0xffffff).strokeCircle(px(sl.x), px(sl.y), r);
+        if (this.previewRange) {
+          const pr = this.previewRange.range * (sl.high ? 1 + MAP_CONFIG.highGroundRangeBonus : 1) * TILE;
+          const col = this.previewRange.aura ? 0x7dffc0 : 0xffffff;
+          g.fillStyle(col, 0.16).fillCircle(px(sl.x), px(sl.y), pr);
+          g.lineStyle(3, col, 0.95).strokeCircle(px(sl.x), px(sl.y), pr);
+        }
       }
     }
     const sel = s.towers.find((q) => q.id === this.selectedTower);
