@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Game, generateMap, TOWERS, GAME_CONFIG, WAVE_CONFIG, availableUpgrades, towerMaxHp, repairCost,
-  hpMultiplier, isBossWave, dist, TowerTypeId,
+  hpMultiplier, isBossWave, dist, TowerTypeId, reviveCost,
 } from '../src/index';
 
 const DT = 1 / GAME_CONFIG.tickRate;
@@ -103,6 +103,24 @@ describe('simulation', () => {
     expect(t.hp).toBeGreaterThan(100);
     expect(s.scrap).toBeLessThan(before);
     expect(t.maxHpFactor).toBeLessThan(1);
+  });
+
+  it('la remise en route du héros se paie, et il attend tant que le stock ne suffit pas', () => {
+    const game = new Game(generateMap(4));
+    const s = game.state;
+    const cost = reviveCost(1);
+    (game as any).damageHero(1000);
+    expect(s.hero.respawnIn).toBeGreaterThan(0);
+    s.scrap = cost - 1;
+    s.deposits = s.deposits.map(() => 0);
+    for (let i = 0; i < 12 * GAME_CONFIG.tickRate; i++) game.step(DT);
+    expect(s.hero.waitingRevive).toBe(true);
+    expect(s.hero.hp).toBe(0);
+    s.scrap = cost + 10;
+    game.step(DT);
+    expect(s.hero.waitingRevive).toBe(false);
+    expect(s.hero.hp).toBeGreaterThan(0);
+    expect(s.scrap).toBeCloseTo(10);
   });
 
   it('le héros n’accepte pas les commandes du stratège, et inversement', () => {

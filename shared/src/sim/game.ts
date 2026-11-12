@@ -54,6 +54,9 @@ export function repairCost(tower: TowerState, hp: number, heroCostMult = 1): num
   return (hp / stats.maxHp) * tower.invested * G.repairCostRatio * stats.repairCostMult * heroCostMult;
 }
 
+/** Prix de la remise en route du héros après sa chute, selon la vague en cours. */
+export const reviveCost = (wave: number) => HERO_CONFIG.reviveBase + HERO_CONFIG.revivePerWave * Math.max(1, wave);
+
 /** Valeur récupérée en vendant (stratège) ou recyclant (héros) une tour. */
 export function salvageValue(tower: TowerState, ratio: number): number {
   const frac = Math.max(0, tower.hp) / towerMaxHp(tower);
@@ -90,7 +93,7 @@ export class Game {
       towers: [],
       enemies: [],
       pickups: [],
-      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: 'idle' }, progress: 0, respawnIn: 0, upgrades: [] },
+      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: 'idle' }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [] },
       deposits: map.deposits.map(() => G.depositStock),
       prospects: map.prospectZones.map(() => 0),
       ai: { repairBudgetPct: 0.3, repairThreshold: 0.6, posture: 'equilibree', allowance: 0, spent: 0, order: null, orderCooldown: 0, message: '' },
@@ -444,7 +447,7 @@ export class Game {
       hero.carry = 0;
       hero.task = { kind: 'idle' };
       hero.progress = 0;
-      this.emit({ t: 'msg', from: 'jeu', text: 'Le héros est à terre ! Il revient à la base dans quelques secondes.' });
+      this.emit({ t: 'msg', from: 'jeu', text: `Héros à terre ! Remise en route dans ${HERO_CONFIG.respawnTime} s pour ${reviveCost(this.state.wave)} ressources.` });
     }
   }
 
@@ -545,6 +548,16 @@ export class Game {
     if (hero.respawnIn > 0) {
       hero.respawnIn -= dt;
       if (hero.respawnIn <= 0) {
+        // La remise en route se paie sur le stock commun ; sans les moyens, le héros attend.
+        const cost = reviveCost(s.wave);
+        if (s.scrap < cost) {
+          hero.respawnIn = 1e-3;
+          if (!hero.waitingRevive) this.emit({ t: 'msg', from: 'jeu', text: `Il faut ${cost} ressources pour remettre le héros en route.` });
+          hero.waitingRevive = true;
+          return;
+        }
+        s.scrap -= cost;
+        hero.waitingRevive = false;
         hero.respawnIn = 0;
         hero.hp = stats.maxHp;
         hero.x = base.x;

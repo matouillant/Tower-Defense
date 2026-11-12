@@ -23,6 +23,7 @@ import {
   isBossWave,
   normalizeCode,
   repairCost,
+  reviveCost,
   salvageValue,
   towerMaxHp,
 } from '@td/shared';
@@ -55,15 +56,26 @@ let aiPanelOpen = false;
 const SIDE_SHEET = matchMedia('(orientation: landscape) and (max-height: 520px)');
 const BOTTOM_SHEET = matchMedia('(max-width: 700px)');
 
+let aiShown = '';
+let aiShownAt = 0;
+const speedLabel = (v: number) => `x${String(v).replace('.', ',')}`;
+
 const cmd = (c: Command) => net.send({ m: 'cmd', cmd: c });
 
+let lastToast = '';
+let lastToastAt = 0;
 function toast(text: string, cls = '') {
+  // Pas de doublon rapproché, et au plus deux messages à l'écran.
+  const now = performance.now();
+  if (text === lastToast && now - lastToastAt < 4000) return;
+  lastToast = text;
+  lastToastAt = now;
   const el = document.createElement('div');
   el.className = `toast ${cls}`;
   el.textContent = text;
   $('toasts').append(el);
-  while ($('toasts').children.length > 3) $('toasts').firstElementChild!.remove();
-  setTimeout(() => el.remove(), 3500);
+  while ($('toasts').children.length > 2) $('toasts').firstElementChild!.remove();
+  setTimeout(() => el.remove(), 2800);
 }
 
 /** Ne remplace le HTML que s'il a changé : évite de casser un appui en cours. */
@@ -217,7 +229,8 @@ net.onMessage = (msg: ServerMessage) => {
 };
 
 function onEvent(e: GameEvent) {
-  if (e.t === 'msg') toast(e.from === 'ia' ? `IA : ${e.text}` : e.text, e.from === 'ia' ? 'ia' : '');
+  // Les messages de l'IA ne s'affichent pas en surimpression : ils vont dans la petite bulle du bas de carte.
+  if (e.t === 'msg' && e.from === 'jeu') toast(e.text);
   else if (e.t === 'wave') toast(e.boss ? `Vague ${e.wave} : un boss approche !` : `Vague ${e.wave}`);
 }
 
@@ -275,7 +288,12 @@ function renderGame() {
   if (!state || !map || !lobby) return;
   const s = state;
   const hs = heroStats(s.hero.upgrades);
-  const heroLine = s.hero.respawnIn > 0 ? `à terre (${Math.ceil(s.hero.respawnIn)} s)` : `<b>${Math.ceil(s.hero.hp)}</b> PV · ${s.hero.carry}/${hs.carryCap}`;
+  const revive = reviveCost(s.wave);
+  const heroLine = s.hero.waitingRevive
+    ? `<span class="warn">à terre · il faut ${revive}</span>`
+    : s.hero.respawnIn > 0
+      ? `<span class="warn">à terre · ${Math.ceil(s.hero.respawnIn)} s · ${revive}</span>`
+      : `<b>${Math.ceil(s.hero.hp)}</b><span class="l"> PV · ${s.hero.carry}/${hs.carryCap}</span>`;
   const pill = (cls: string, icon: string, html: string) => `<span class="pill ${cls}">${icon}${html}</span>`;
   const bolt = `<img src="${ART.bolt.url}" alt="" />`;
   // Vitesse : celle appliquée est en surbrillance ; la mienne, si elle attend l'accord de l'autre, est en pointillés.
@@ -283,16 +301,27 @@ function renderGame() {
   const asked = Math.max(...lobby.slots.map((sl) => sl.speed ?? 0));
   const speedBtns = SPEEDS.map((v) => {
     const cls = v === lobby!.speed ? 'on' : v === mySpeed ? 'wait' : v === asked && asked > lobby!.speed ? 'asked' : '';
-    return `<button data-act="speed" data-id="${v}" class="${cls}" ${role ? '' : 'disabled'}>x${v}</button>`;
+    return `<button data-act="speed" data-id="${v}" class="${cls}" ${role ? '' : 'disabled'}>${speedLabel(v)}</button>`;
   }).join('');
+  // Sur téléphone, un seul bouton qui fait défiler les vitesses : le bandeau tient sur une ligne.
+  const pending = mySpeed !== null && mySpeed > lobby.speed ? ` <small>→${speedLabel(mySpeed)} ?</small>` : asked > lobby.speed ? ' <small>?</small>' : '';
+  const speedCycle = `<button data-act="speedCycle" class="speed-cycle ${asked > lobby.speed ? 'asked' : ''}" ${role ? '' : 'disabled'}>${speedLabel(lobby.speed)}${pending}</button>`;
   render(
     $('hud'),
     `${pill('wave', '', `<span class="l">Vague </span><span class="s">V</span><b>${s.wave}</b>`)}
      ${pill('heart', '<i>♥</i>', `<b>${s.baseHp}</b>`)}${pill('scrap', bolt, `<b>${Math.floor(s.scrap)}</b>`)}
      ${pill('hero', `<img src="${ART.hero.url}" alt="" />`, `<span class="l">${s.heroController === 'ai' ? 'IA · ' : ''}</span>${heroLine}`)}
-     <span class="grow"></span><span class="speed">${speedBtns}</span>
-     ${s.heroController === 'ai' && s.ai.message ? `<span class="ai-msg">IA : ${esc(s.ai.message)}</span>` : ''}`,
+     <span class="grow"></span><span class="speed">${speedBtns}</span>${speedCycle}`,
   );
+  // Bulle de l'IA, en bas de la carte, sans rien décaler. Visible pour le stratège, qui la pilote.
+  const aiText = s.heroController === 'ai' && role === 'strategist' ? s.ai.message : '';
+  if (aiText !== aiShown) {
+    aiShown = aiText;
+    aiShownAt = performance.now();
+  }
+  const fresh = aiText && performance.now() - aiShownAt < 6000;
+  render($('ai-say'), fresh ? `<b>IA</b> ${esc(aiText)}` : '');
+  $('ai-say').hidden = !fresh;
   // Sur la carte : le gros bouton de lancement (stratège) ou le compte à rebours (autres joueurs).
   let over = '';
   if (s.phase === 'wave') over = `<span class="tag">${s.enemies.length + s.toSpawn} ennemi${s.enemies.length + s.toSpawn > 1 ? 's' : ''}</span>`;
@@ -480,6 +509,11 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'close': movingTower = null; return select(null);
     case 'ready': cmd({ c: 'ready' }); break;
     case 'speed': net.send({ m: 'speed', speed: Number(id) }); break;
+    case 'speedCycle': {
+      const mine = lobby!.slots.find((sl) => sl.role === role)?.speed ?? lobby!.speed;
+      net.send({ m: 'speed', speed: SPEEDS[(SPEEDS.indexOf(mine) + 1) % SPEEDS.length] });
+      break;
+    }
     case 'ability':
       if (id === 'surcharge') cmd({ c: 'ability', id, towerId });
       else if (scene) {

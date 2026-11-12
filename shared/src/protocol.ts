@@ -4,7 +4,8 @@ import type { Command, GameEvent, GameState, Role } from './sim/types';
 /** Alphabet des codes de partie : sans caractères ambigus (0/O, 1/I/L). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const CODE_LENGTH = 5;
-export const SPEEDS = [1, 2, 4];
+/** Vitesses proposées, au-dessus du rythme de base (GAME_CONFIG.gameSpeed). */
+export const SPEEDS = [1, 1.5, 2, 3];
 export const normalizeCode = (code: string) => code.trim().toUpperCase();
 export const isValidCode = (code: string) =>
   code.length === CODE_LENGTH && [...code].every((ch) => CODE_ALPHABET.includes(ch));

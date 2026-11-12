@@ -190,3 +190,30 @@ button.on { background: linear-gradient(#5cecff, #1aa6d6); border-color: #c9f8ff
 .toast.ia { background: linear-gradient(#123a5c, #0c2540); border-color: var(--neon); color: #bff3ff; }
 .toast.err { background: linear-gradient(#5c1220, #3a0c16); border-color: #ff6b6b; color: #ffd0d0; }
 #hud .ai-msg { color: var(--neon); }
+
+/* ================= Stabilité de l'affichage ================= */
+/* Le bandeau a une hauteur fixe et ne passe jamais à la ligne : sinon la carte se redimensionne et « saute ». */
+#hud { flex-wrap: nowrap; overflow: hidden; height: calc(46px + env(safe-area-inset-top)); }
+#hud > * { flex: none; }
+#hud .pill.hero { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+#hud .pill.hero > span { overflow: hidden; text-overflow: ellipsis; }
+#hud .warn { color: #ff8f8f; font-weight: 700; }
+.speed-cycle { display: none; }
+#ai-say { position: absolute; left: 8px; bottom: 8px; max-width: min(72%, 460px); z-index: 3; pointer-events: none; background: #0a1226e6; border: 2px solid #35e0ff88; border-radius: 8px; padding: 4px 10px; font-size: 13px; color: #bff3ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 0 12px #35e0ff33; }
+#ai-say b { color: var(--neon); margin-right: 4px; }
+#toasts .toast { font-size: 14px; }
+
+@media (max-width: 700px), (max-height: 520px) {
+  #hud { height: calc(42px + env(safe-area-inset-top)); gap: 4px; }
+  #hud .speed { display: none; }
+  .speed-cycle { display: inline-block; min-height: 30px !important; padding: 2px 9px !important; font-size: 13px; }
+  .speed-cycle small { color: #ffd84a; font-size: 11px; }
+  .speed-cycle.asked { background: linear-gradient(#ff7ac0, #c22f86); border-color: #ffc2e3; }
+  .pill { font-size: 13px; padding: 0 7px 0 5px; }
+  .pill img { width: 18px; height: 18px; }
+  #ai-say { font-size: 11.5px; padding: 3px 8px; bottom: 6px; left: 6px; max-width: 78%; }
+  #toasts { padding-top: 0; top: calc(92px + env(safe-area-inset-top)); }
+  #toasts .toast { font-size: 12.5px; padding: 3px 10px; max-width: 86vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+/* Panneau ouvert sur téléphone debout : la bulle de l'IA passe au-dessus du panneau masqué, donc on la cache. */
+@media (max-width: 700px) { #game:has(#panel:not([hidden])) #ai-say, #game:has(#ai-panel:not([hidden])) #ai-say { display: none; } }

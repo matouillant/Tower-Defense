@@ -47,6 +47,8 @@ export class Room {
   /** Jeton du joueur qui tient chaque rôle (connecté ou en cours de reconnexion). */
   slots: Record<Role, string | null> = { strategist: null, hero: null };
   private tickCount = 0;
+  /** Temps de jeu en attente : la simulation avance toujours par pas fixes, quelle que soit la vitesse. */
+  private pending = 0;
   emptySince = 0;
 
   constructor(readonly code: string, seed: number) {
@@ -230,7 +232,11 @@ export class Room {
     }
     this.emptySince = 0;
     if (!this.game) return;
-    for (let i = this.speed; i > 0; i--) this.game.step(dt);
+    this.pending += dt * this.speed * GAME_CONFIG.gameSpeed;
+    for (let i = 0; this.pending >= dt - 1e-9 && i < 8; i++) {
+      this.game.step(dt);
+      this.pending -= dt;
+    }
     this.tickCount++;
     const every = Math.max(1, Math.round(GAME_CONFIG.tickRate / GAME_CONFIG.snapshotRate));
     if (this.tickCount % every === 0) {

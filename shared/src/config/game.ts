@@ -1,6 +1,8 @@
 /** Règles générales, économie, héros, compétences et récompenses. */
 export const GAME_CONFIG = {
   tickRate: 20,
+  /** Rythme de base : 1 seconde réelle = 1,2 seconde de jeu (avant le choix x1,5 / x2 / x3). */
+  gameSpeed: 1.2,
   snapshotRate: 10,
   baseHp: 15,
   startScrap: 160,
@@ -58,6 +60,9 @@ export const HERO_CONFIG = {
   repairRange: 1.5,
   carryCap: 60,
   respawnTime: 8,
+  /** Coût de la remise en route du héros : reviveBase + revivePerWave × vague, payé sur le stock commun. */
+  reviveBase: 30,
+  revivePerWave: 5,
   /** Régénération près de la base. */
   baseRegen: 12,
   baseRadius: 1.5,

@@ -4195,6 +4195,8 @@ var isBossWave = (wave, cfg = WAVE_CONFIG) => wave > 0 && wave % cfg.bossEvery =
 // shared/src/config/game.ts
 var GAME_CONFIG = {
   tickRate: 20,
+  /** Rythme de base : 1 seconde réelle = 1,2 seconde de jeu (avant le choix x1,5 / x2 / x3). */
+  gameSpeed: 1.2,
   snapshotRate: 10,
   baseHp: 15,
   startScrap: 160,
@@ -4248,6 +4250,9 @@ var HERO_CONFIG = {
   repairRange: 1.5,
   carryCap: 60,
   respawnTime: 8,
+  /** Coût de la remise en route du héros : reviveBase + revivePerWave × vague, payé sur le stock commun. */
+  reviveBase: 30,
+  revivePerWave: 5,
   /** Régénération près de la base. */
   baseRegen: 12,
   baseRadius: 1.5
@@ -4285,7 +4290,7 @@ var roleOfCommand = (cmd) => HERO_COMMANDS.has(cmd.c) ? "hero" : "strategist";
 // shared/src/protocol.ts
 var CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 var CODE_LENGTH = 5;
-var SPEEDS = [1, 2, 4];
+var SPEEDS = [1, 1.5, 2, 3];
 var normalizeCode = (code) => code.trim().toUpperCase();
 var isValidCode = (code) => code.length === CODE_LENGTH && [...code].every((ch) => CODE_ALPHABET.includes(ch));
 
@@ -4454,6 +4459,7 @@ function repairCost(tower, hp, heroCostMult = 1) {
   const stats = baseTowerStats(tower);
   return hp / stats.maxHp * tower.invested * GAME_CONFIG.repairCostRatio * stats.repairCostMult * heroCostMult;
 }
+var reviveCost = (wave) => HERO_CONFIG.reviveBase + HERO_CONFIG.revivePerWave * Math.max(1, wave);
 function salvageValue(tower, ratio) {
   const frac = Math.max(0, tower.hp) / towerMaxHp(tower);
   return Math.floor(tower.invested * ratio * (0.4 + 0.6 * frac));
@@ -4474,7 +4480,7 @@ var Game = class {
       towers: [],
       enemies: [],
       pickups: [],
-      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: "idle" }, progress: 0, respawnIn: 0, upgrades: [] },
+      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: "idle" }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [] },
       deposits: map.deposits.map(() => GAME_CONFIG.depositStock),
       prospects: map.prospectZones.map(() => 0),
       ai: { repairBudgetPct: 0.3, repairThreshold: 0.6, posture: "equilibree", allowance: 0, spent: 0, order: null, orderCooldown: 0, message: "" },
@@ -4804,7 +4810,7 @@ var Game = class {
       hero.carry = 0;
       hero.task = { kind: "idle" };
       hero.progress = 0;
-      this.emit({ t: "msg", from: "jeu", text: "Le h\xE9ros est \xE0 terre ! Il revient \xE0 la base dans quelques secondes." });
+      this.emit({ t: "msg", from: "jeu", text: `H\xE9ros \xE0 terre ! Remise en route dans ${HERO_CONFIG.respawnTime} s pour ${reviveCost(this.state.wave)} ressources.` });
     }
   }
   /** Champ de distance (en pas à 4 directions) vers une case, en évitant les rochers. */
@@ -4898,6 +4904,15 @@ var Game = class {
     if (hero.respawnIn > 0) {
       hero.respawnIn -= dt;
       if (hero.respawnIn <= 0) {
+        const cost = reviveCost(s.wave);
+        if (s.scrap < cost) {
+          hero.respawnIn = 1e-3;
+          if (!hero.waitingRevive) this.emit({ t: "msg", from: "jeu", text: `Il faut ${cost} ressources pour remettre le h\xE9ros en route.` });
+          hero.waitingRevive = true;
+          return;
+        }
+        s.scrap -= cost;
+        hero.waitingRevive = false;
         hero.respawnIn = 0;
         hero.hp = stats.maxHp;
         hero.x = base2.x;
@@ -5260,6 +5275,8 @@ var Room = class {
   /** Jeton du joueur qui tient chaque rôle (connecté ou en cours de reconnexion). */
   slots = { strategist: null, hero: null };
   tickCount = 0;
+  /** Temps de jeu en attente : la simulation avance toujours par pas fixes, quelle que soit la vitesse. */
+  pending = 0;
   emptySince = 0;
   get connected() {
     return [...this.clients.values()].filter((c) => c.socket);
@@ -5421,7 +5438,11 @@ var Room = class {
     }
     this.emptySince = 0;
     if (!this.game) return;
-    for (let i = this.speed; i > 0; i--) this.game.step(dt);
+    this.pending += dt * this.speed * GAME_CONFIG.gameSpeed;
+    for (let i = 0; this.pending >= dt - 1e-9 && i < 8; i++) {
+      this.game.step(dt);
+      this.pending -= dt;
+    }
     this.tickCount++;
     const every = Math.max(1, Math.round(GAME_CONFIG.tickRate / GAME_CONFIG.snapshotRate));
     if (this.tickCount % every === 0) {

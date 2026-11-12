@@ -76,7 +76,8 @@ Valeurs de départ, à ajuster en jouant :
 - Pendant une vague, la réparation plafonne à 70 % des PV ; entre deux vagues, elle est complète.
 - 40 % de la prime va directement au stock, 60 % tombe au sol et doit être ramassée par le héros.
 
-Ces chiffres n'ont pas encore été réglés par des parties réelles. La vitesse de jeu (x1, x2, x4) ne s'applique que si tous les joueurs humains la demandent.
+Ces chiffres n'ont pas encore été réglés par des parties réelles. Le jeu tourne de base à 1,2 fois le temps réel (`gameSpeed`). Les vitesses x1,5, x2 et x3 s'ajoutent par-dessus, et ne s'appliquent que si tous les joueurs humains les demandent.
+- Remise en route du héros après sa chute : 8 s, puis `30 + 5 × vague` ressources sur le stock commun ; sans les moyens, il attend.
 
 ## Limites connues du prototype
 

@@ -50,10 +50,14 @@ const px = (v: number) => (v + 0.5) * TILE;
 
 export class GameScene extends Phaser.Scene {
   private map!: GameMap;
+  /** État affiché un peu en retard, entre deux états reçus : le mouvement reste fluide même si le réseau hoquette. */
   private prev: GameState | null = null;
+  /** Dernier état reçu (pour interpréter les appuis). */
   private cur: GameState | null = null;
-  private curAt = 0;
-  private interval = 100;
+  private buffer: { at: number; state: GameState; events: GameEvent[]; played: boolean }[] = [];
+  private gap = 100;
+  /** Déplacement de caméra en douceur (sélection d'une tour sur téléphone). */
+  private camTarget: { x: number; y: number } | null = null;
   private ready = false;
   private ui: Phaser.GameObjects.Graphics | null = null;
   private fxg: Phaser.GameObjects.Graphics | null = null;
@@ -89,6 +93,7 @@ export class GameScene extends Phaser.Scene {
   setMap(map: GameMap) {
     this.map = map;
     this.prev = this.cur = null;
+    this.buffer = [];
     if (this.ready) this.drawStatic();
   }
 
@@ -126,6 +131,7 @@ export class GameScene extends Phaser.Scene {
       }
       if (!dragging && Math.hypot(p.x - startX, p.y - startY) > 10 * DPR) dragging = true;
       if (dragging && this.canPan()) {
+        this.camTarget = null;
         this.cx -= (p.x - p.prevPosition.x) / this.zoom;
         this.cy -= (p.y - p.prevPosition.y) / this.zoom;
         this.lastDrag = performance.now();
@@ -218,10 +224,8 @@ export class GameScene extends Phaser.Scene {
   focusOn(x: number, y: number, biasX = 0, biasY = 0) {
     if (!this.canPan()) return;
     const { width, height } = this.scale.gameSize;
-    this.cx = px(x) + (width * biasX) / this.zoom;
-    this.cy = px(y) + (height * biasY) / this.zoom;
+    this.camTarget = { x: px(x) + (width * biasX) / this.zoom, y: px(y) + (height * biasY) / this.zoom };
     this.lastDrag = performance.now();
-    this.applyCamera();
   }
 
   private resolveTap(x: number, y: number): Tap {
@@ -342,10 +346,15 @@ export class GameScene extends Phaser.Scene {
 
   pushState(state: GameState, events: GameEvent[]) {
     const now = performance.now();
-    if (this.cur) this.interval = Math.min(250, Math.max(50, now - this.curAt));
-    this.prev = this.cur;
+    const last = this.buffer[this.buffer.length - 1];
+    if (last) this.gap = this.gap * 0.85 + Math.min(300, Math.max(30, now - last.at)) * 0.15;
+    this.buffer.push({ at: now, state, events, played: false });
+    if (this.buffer.length > 30) this.buffer.splice(0, this.buffer.length - 30);
     this.cur = state;
-    this.curAt = now;
+  }
+
+  /** Effets visuels d'un état : joués au moment où cet état s'affiche, pour rester en phase avec les positions. */
+  private playEvents(state: GameState, events: GameEvent[]) {
     const ring = (x: number, y: number, r: number, color: number, life: number) =>
       this.fx.push({ kind: 'ring', x1: x, y1: y, x2: 0, y2: 0, r, color, life, max: life });
     for (const e of events) {
@@ -378,21 +387,42 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, deltaMs: number) {
-    const s = this.cur;
     const g = this.ui;
     const f = this.fxg;
-    if (!s || !g || !f) return;
+    if (!this.buffer.length || !g || !f) return;
+    // On affiche le jeu avec un léger retard (1,5 intervalle entre deux états), en interpolant entre les deux
+    // états qui encadrent ce moment. Si un état arrive en retard, le mouvement ralentit au lieu de sauter.
+    const now = performance.now();
+    const renderAt = now - this.gap * 1.5;
+    const buf = this.buffer;
+    let i = buf.length - 1;
+    while (i > 0 && buf[i].at > renderAt) i--;
+    const A = buf[i];
+    const B = buf[Math.min(i + 1, buf.length - 1)];
+    for (const entry of buf) {
+      if (entry.played || entry.at > B.at) continue;
+      entry.played = true;
+      // Après une longue absence (onglet en arrière-plan), on ne rejoue pas les vieux effets.
+      if (renderAt - entry.at < 600) this.playEvents(entry.state, entry.events);
+    }
+    if (i > 0) buf.splice(0, i);
+    const s = B.state;
+    this.prev = A === B ? null : A.state;
+    const a = A === B ? 1 : Math.min(1, Math.max(0, (renderAt - A.at) / (B.at - A.at)));
     const dt = deltaMs / 1000;
     const t = time / 1000;
     g.clear();
     f.clear();
-    if (this.follow && s.hero.respawnIn <= 0 && this.canPan() && performance.now() - this.lastDrag > 2500) {
+    if (this.camTarget) {
+      this.cx += (this.camTarget.x - this.cx) * Math.min(1, dt * 9);
+      this.cy += (this.camTarget.y - this.cy) * Math.min(1, dt * 9);
+      if (Math.hypot(this.camTarget.x - this.cx, this.camTarget.y - this.cy) < 1) this.camTarget = null;
+      this.applyCamera();
+    } else if (this.follow && s.hero.respawnIn <= 0 && this.canPan() && performance.now() - this.lastDrag > 2500) {
       this.cx += (px(s.hero.x) - this.cx) * 0.08;
       this.cy += (px(s.hero.y) - this.cy) * 0.08;
       this.applyCamera();
     }
-    // Interpolation entre les deux derniers états reçus, pour un mouvement fluide.
-    const a = Math.min(1, (performance.now() - this.curAt) / this.interval);
     const lerp = (from: number | undefined, to: number) => (from === undefined ? to : from + (to - from) * a);
 
     // ---- sélection
@@ -664,8 +694,16 @@ export function createGame(parent: HTMLElement, map: GameMap) {
     input: { activePointers: 3 },
   });
   /** À appeler quand la zone de jeu change de taille (en pixels CSS). */
+  let lastW = 0;
+  let lastH = 0;
   const resize = (width: number, height: number) => {
-    if (width > 0 && height > 0) game.scale.resize(width * DPR, height * DPR);
+    // Tailles entières, et on ignore les variations infimes : redimensionner le canvas l'efface (flash).
+    const w = Math.floor(width * DPR);
+    const h = Math.floor(height * DPR);
+    if (w <= 0 || h <= 0 || (Math.abs(w - lastW) < 2 && Math.abs(h - lastH) < 2)) return;
+    lastW = w;
+    lastH = h;
+    game.scale.resize(w, h);
   };
   return { game, scene, resize };
 }

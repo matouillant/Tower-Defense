@@ -81,20 +81,21 @@ describe('salons', () => {
     const room = new RoomManager().create() as Room;
     const p1 = room.join(fakeSocket(), 'Alice') as any;
     room.handle(p1, { m: 'start' });
-    room.handle(p1, { m: 'speed', speed: 4 });
-    expect(room.speed).toBe(4);
+    room.handle(p1, { m: 'speed', speed: 3 });
+    expect(room.speed).toBe(3);
     const before = room.game!.state.tick;
-    room.tick(1000, DT);
-    expect(room.game!.state.tick).toBe(before + 4);
+    for (let i = 0; i < 10; i++) room.tick(1000 + i * 50, DT);
+    // 10 ticks réels, à x3 sur un rythme de base de 1,2 : 36 pas de simulation.
+    expect(room.game!.state.tick).toBe(before + Math.round(10 * 3 * GAME_CONFIG.gameSpeed));
 
     const p2 = room.join(fakeSocket(), 'Bob') as any;
     expect(room.speed).toBe(1);
-    room.handle(p2, { m: 'speed', speed: 2 });
-    expect(room.speed).toBe(2);
-    room.handle(p2, { m: 'speed', speed: 4 });
-    expect(room.speed).toBe(4);
-    room.handle(p1, { m: 'speed', speed: 3 as any });
-    expect(room.speed).toBe(4);
+    room.handle(p2, { m: 'speed', speed: 1.5 });
+    expect(room.speed).toBe(1.5);
+    room.handle(p2, { m: 'speed', speed: 3 });
+    expect(room.speed).toBe(3);
+    room.handle(p1, { m: 'speed', speed: 4 as any });
+    expect(room.speed).toBe(3);
   });
 
   it('la partie se met en pause quand plus personne n’est connecté', () => {

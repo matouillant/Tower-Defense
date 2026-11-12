@@ -79,6 +79,8 @@ export interface HeroState {
   /** Avancement de l'action en cours (0..1), pour l'affichage. */
   progress: number;
   respawnIn: number;
+  /** Le délai est écoulé mais le stock ne suffit pas à payer la remise en route : le héros attend. */
+  waitingRevive: boolean;
   upgrades: string[];
 }
 
