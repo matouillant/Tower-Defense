@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { ABILITIES, AbilityId, ENEMIES, MAP_CONFIG, TOWERS, bestFacing, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
 import { ART, HEADLESS_TOWERS } from './art';
+import { TERRAIN_PAD, bakeTerrain } from './terrain';
 
 export const TILE = 48;
 /** Taille minimale d'une case à l'écran, en pixels CSS, pour rester confortable au doigt. */
@@ -16,6 +17,9 @@ export type Tap =
   | { kind: 'ground'; x: number; y: number };
 
 const INK = 0x2a2344;
+/** Couleur d'identité de chaque tourelle (socle) et couleurs des trois voies d'amélioration. */
+const TOWER_COLOR: Record<TowerTypeId, number> = { canon: 0xff7a3c, givre: 0x4fd8ff, baliste: 0xb46bff, foudre: 0xd6a8ff, laser: 0xff4d8d, relais: 0x3fe39a, depot: 0xffc93c };
+const BRANCH_COLOR = [0xff5d5d, 0x35e0ff, 0xffd84a];
 const SHOT_COLOR: Record<TowerTypeId, number> = { canon: 0xff7a5c, givre: 0x5ad7ff, baliste: 0xffa63d, foudre: 0xc9a2ff, laser: 0xff4d8d, relais: 0x7dffc0, depot: 0xffc93c };
 /** Hauteur de la tête d'une tourelle au-dessus du centre de sa case, en cases. */
 /** Vue de dessus : la tête de la tourelle est centrée sur son socle. */
@@ -60,6 +64,8 @@ export class GameScene extends Phaser.Scene {
   private camTarget: { x: number; y: number } | null = null;
   private ready = false;
   private ui: Phaser.GameObjects.Graphics | null = null;
+  /** Calque sous les tourelles : socles colorés et anneaux de niveau. */
+  private under: Phaser.GameObjects.Graphics | null = null;
   private fxg: Phaser.GameObjects.Graphics | null = null;
   private fx: Fx[] = [];
   private towers = new Map<number, TowerView>();
@@ -79,6 +85,8 @@ export class GameScene extends Phaser.Scene {
   /** La caméra suit le héros (pour le joueur qui le contrôle), sauf juste après un glissement. */
   follow = false;
   private zoom = 1;
+  private terrain: Phaser.GameObjects.Image | null = null;
+  private terrainHi = false;
   private cx = 0;
   private cy = 0;
   private userZoomed = false;
@@ -274,74 +282,19 @@ export class GameScene extends Phaser.Scene {
     this.hero = null;
     const m = this.map;
     const W = m.width;
-    const g = this.add.graphics();
-    const rng = new Rng(m.seed ^ 0x51ed);
     const cells = (fn: (x: number, y: number, i: number) => void) => {
       for (let y = 0; y < m.height; y++) for (let x = 0; x < W; x++) fn(x, y, y * W + x);
     };
-
-    // Sol turquoise en damier doux, bordé d'une bande plus sombre.
-    g.fillStyle(0x163d33).fillRoundedRect(-16, -16, W * TILE + 32, m.height * TILE + 32, 28);
-    cells((x, y) => g.fillStyle((x + y) % 2 ? 0x2f8f6b : 0x2b8864).fillRect(x * TILE, y * TILE, TILE, TILE));
-
-    // Flore alien sur le sol libre : champignons lumineux et petites pousses.
-    const reserved = new Set<number>([...m.deposits, ...m.prospectZones].map((c) => c.y * W + c.x));
-    cells((x, y, i) => {
-      if (m.terrain[i] !== 'ground' || reserved.has(i) || !rng.chance(0.22)) return;
-      const cx = x * TILE + rng.int(12, TILE - 12);
-      const cy = y * TILE + rng.int(14, TILE - 10);
-      if (rng.chance(0.4)) {
-        // Petit cratère : ombre intérieure et rebord éclairé.
-        const r = rng.int(5, 9);
-        g.fillStyle(0x1f6b50).fillEllipse(cx, cy, r * 2.4, r * 1.9);
-        g.fillStyle(0x184f3c).fillEllipse(cx + 1, cy + 1, r * 1.7, r * 1.3);
-        g.lineStyle(1.5, 0x5fc79a, 0.7).beginPath().arc(cx, cy, r * 1.1, Math.PI * 1.1, Math.PI * 1.9).strokePath();
-      } else if (rng.chance(0.5)) {
-        // Touffe de végétation alien lumineuse.
-        const glow = rng.pick([0x7ef0ff, 0xb6ff5a, 0xff8fd0, 0xffe066]);
-        g.fillStyle(0x1f6b50).fillCircle(cx, cy, 7);
-        for (let k = 0; k < 5; k++) g.fillStyle(0x3fae7c).fillCircle(cx + Math.cos(k * 1.26) * 5, cy + Math.sin(k * 1.26) * 5, 3.2);
-        g.fillStyle(glow).fillCircle(cx, cy, 2.6);
-      } else {
-        g.fillStyle(0x1f6b50, 0.8).fillCircle(cx + 2, cy + 2, 4);
-        g.fillStyle(0x9aa6bd).fillCircle(cx, cy, 3.6);
-        g.fillStyle(0xdfe6f5).fillCircle(cx - 1, cy - 1, 1.5);
-      }
-    });
-
-    // Route : liseré violet sombre puis dalles claires, avec des coulées de gel collant (ralentit).
-    const mud = new Set(m.mud);
-    cells((x, y, i) => m.terrain[i] === 'path' && g.fillStyle(0x0d1220).fillRoundedRect(x * TILE - 5, y * TILE - 5, TILE + 10, TILE + 10, 12));
-    cells((x, y, i) => m.terrain[i] === 'path' && g.fillStyle(0x4b5878).fillRoundedRect(x * TILE - 1, y * TILE - 1, TILE + 2, TILE + 2, 9));
-    cells((x, y, i) => {
-      if (m.terrain[i] !== 'path') return;
-      if (mud.has(i)) {
-        g.fillStyle(0x6a3fc0).fillRoundedRect(x * TILE - 1, y * TILE - 1, TILE + 2, TILE + 2, 9);
-        g.fillStyle(0x9a5cff);
-        for (let k = 0; k < 3; k++) g.fillEllipse(x * TILE + rng.int(10, 38), y * TILE + rng.int(10, 38), rng.int(8, 14), rng.int(5, 8));
-        g.fillStyle(0xf0d6ff, 0.9).fillCircle(x * TILE + rng.int(10, 38), y * TILE + rng.int(10, 38), 2.5);
-      } else {
-        // Dalle métallique avec reflet et rivets.
-        g.fillStyle(0x3b4664).fillRoundedRect(x * TILE + 4, y * TILE + 4, TILE - 8, TILE - 8, 6);
-        g.fillStyle(0x566489).fillRoundedRect(x * TILE + 6, y * TILE + 6, TILE - 12, TILE - 14, 5);
-        g.fillStyle(0x7584ab, 0.6).fillRoundedRect(x * TILE + 9, y * TILE + 8, TILE - 18, 5, 2.5);
-        g.fillStyle(0x1d2438);
-        for (const [dx, dy] of [[9, 9], [TILE - 9, 9], [9, TILE - 9], [TILE - 9, TILE - 9]]) g.fillCircle(x * TILE + dx, y * TILE + dy, 1.8);
-      }
-    });
-
-    // Emplacements de construction : plots métalliques à anneau lumineux (doré sur les points hauts).
-    for (const s of m.slots) {
-      const cx = px(s.x);
-      const cy = px(s.y);
-      g.fillStyle(0x0d1220, 0.35).fillCircle(cx + 2, cy + 3, 21);
-      g.fillStyle(INK).fillCircle(cx, cy, 20);
-      g.fillStyle(0x7c8bb8).fillCircle(cx, cy, 17);
-      g.fillStyle(0xaab6d6).fillCircle(cx, cy - 1.5, 14.5);
-      g.fillStyle(INK).fillCircle(cx, cy, 8);
-      g.fillStyle(s.high ? 0xffd84a : 0x5ad7ff).fillCircle(cx, cy, 5.5);
-      if (s.high) g.lineStyle(3, 0xffd84a).strokeCircle(cx, cy, 22);
-    }
+    // Décor dessiné une fois à haute résolution (net en zoom) et en résolution réduite (net en vue d'ensemble).
+    for (const key of ['terrain_hi', 'terrain_lo']) if (this.textures.exists(key)) this.textures.remove(key);
+    const fullW = W * TILE + TERRAIN_PAD * 2;
+    const fullH = m.height * TILE + TERRAIN_PAD * 2;
+    const maxTex = Math.min(4096, (this.game.renderer as Phaser.Renderer.WebGL.WebGLRenderer).getMaxTextureSize?.() ?? 4096);
+    const hiScale = Math.min(1.8 * DPR, maxTex / Math.max(fullW, fullH));
+    this.textures.addCanvas('terrain_hi', bakeTerrain(m, TILE, hiScale));
+    this.textures.addCanvas('terrain_lo', bakeTerrain(m, TILE, Math.min(hiScale, 1.1)));
+    this.terrain = this.add.image(-TERRAIN_PAD, -TERRAIN_PAD, 'terrain_lo').setOrigin(0, 0).setDisplaySize(fullW, fullH).setDepth(0);
+    this.terrainHi = false;
 
     cells((x, y, i) => m.terrain[i] === 'rock' && this.sprite('rock', x, y, 0.95));
     this.depositViews = m.deposits.map((d) => this.sprite('deposit', d.x, d.y, 0.98));
@@ -349,6 +302,7 @@ export class GameScene extends Phaser.Scene {
     for (const sp of m.spawns) this.sprite('portal', sp.x, sp.y, 1.35);
     this.sprite('base', m.base.x, m.base.y, 1.9).setDepth(101);
 
+    this.under = this.add.graphics().setDepth(105);
     this.ui = this.add.graphics().setDepth(5000);
     this.fxg = this.add.graphics().setDepth(6000);
     this.layout(true);
@@ -405,16 +359,7 @@ export class GameScene extends Phaser.Scene {
     const a = (facing * Math.PI) / 4;
     const path = () => {
       g.beginPath();
-      if (st.shape === 'line') {
-        const w = st.beamWidth * TILE;
-        const c = Math.cos(a);
-        const s = Math.sin(a);
-        const pt = (f: number, l: number) => [x + f * c - l * s, y + f * s + l * c] as const;
-        const m0 = st.minRange * TILE;
-        const pts = [pt(m0, -w), pt(R, -w), pt(R, w), pt(m0, w)];
-        g.moveTo(pts[0][0], pts[0][1]);
-        for (const p of pts.slice(1)) g.lineTo(p[0], p[1]);
-      } else if (st.shape === 'cone') {
+      if (st.shape === 'cone') {
         g.moveTo(x, y);
         g.arc(x, y, R, a - st.coneHalf, a + st.coneHalf, false);
       } else {
@@ -428,13 +373,49 @@ export class GameScene extends Phaser.Scene {
     g.lineStyle(7, INK, 0.75).strokePath();
     path();
     g.lineStyle(3.5, color, 1).strokePath();
-    if (st.minRange > 0 && st.shape === 'circle') g.lineStyle(2, 0xff5d5d, 0.8).strokeCircle(x, y, st.minRange * TILE);
-    if (st.shape !== 'circle') {
+    if (st.minRange > 0 && st.shape !== 'cone') g.lineStyle(2, 0xff5d5d, 0.8).strokeCircle(x, y, st.minRange * TILE);
+    if (st.shape === 'cone') {
       // Flèche d'orientation.
       const c = Math.cos(a);
       const s = Math.sin(a);
       const tip = TILE * 0.95;
       g.fillStyle(color, 1).fillTriangle(x + c * tip, y + s * tip, x + c * (tip - 11) - s * 7, y + s * (tip - 11) + c * 7, x + c * (tip - 11) + s * 7, y + s * (tip - 11) - c * 7);
+    }
+  }
+
+  /**
+   * Identité visuelle d'une tour : un socle lumineux à la couleur de son type,
+   * et un anneau par niveau d'amélioration, à la couleur de la voie choisie (le dernier niveau tourne et brille).
+   */
+  private drawTowerSocle(tw: GameState['towers'][number], x: number, y: number, t: number, dead: boolean) {
+    const u = this.under!;
+    const col = dead ? 0x55596a : TOWER_COLOR[tw.type];
+    u.fillStyle(col, 0.22).fillCircle(x, y, TILE * 0.6);
+    u.fillStyle(col, 0.35).fillCircle(x, y, TILE * 0.47);
+    u.lineStyle(2.5, col, 0.95).strokeCircle(x, y, TILE * 0.47);
+    if (!tw.path.length) return;
+    const roots = TOWERS[tw.type].nodes.filter((n) => n.parent === null);
+    const branch = Math.max(0, roots.findIndex((n) => n.id === tw.path[0]));
+    const bc = dead ? 0x777a88 : BRANCH_COLOR[branch % BRANCH_COLOR.length];
+    for (let k = 0; k < tw.path.length; k++) {
+      const r = TILE * (0.56 + k * 0.085);
+      const spin = k === 2 ? t * 1.6 : k * 0.5;
+      const segs = 3 + k;
+      const gap = 0.32;
+      u.lineStyle(k === 2 ? 4 : 3, INK, 0.9);
+      for (let i = 0; i < segs; i++) {
+        const a0 = spin + (i / segs) * Math.PI * 2;
+        u.beginPath().arc(x, y, r, a0, a0 + (Math.PI * 2) / segs - gap).strokePath();
+      }
+      u.lineStyle(k === 2 ? 2.6 : 1.8, bc, 1);
+      for (let i = 0; i < segs; i++) {
+        const a0 = spin + (i / segs) * Math.PI * 2;
+        u.beginPath().arc(x, y, r, a0, a0 + (Math.PI * 2) / segs - gap).strokePath();
+      }
+    }
+    if (tw.path.length >= 3 && !dead) {
+      // Dernier niveau : halo pulsé.
+      u.fillStyle(bc, 0.12 + Math.sin(t * 4 + tw.id) * 0.06).fillCircle(x, y, TILE * 0.9);
     }
   }
 
@@ -470,6 +451,7 @@ export class GameScene extends Phaser.Scene {
     const dt = deltaMs / 1000;
     const t = time / 1000;
     g.clear();
+    this.under?.clear();
     f.clear();
     if (this.camTarget) {
       this.cx += (this.camTarget.x - this.cx) * Math.min(1, dt * 9);
@@ -480,6 +462,14 @@ export class GameScene extends Phaser.Scene {
       this.cx += (px(s.hero.x) - this.cx) * 0.08;
       this.cy += (px(s.hero.y) - this.cy) * 0.08;
       this.applyCamera();
+    }
+    if (this.terrain) {
+      const wantHi = this.zoom > 1.15;
+      if (wantHi !== this.terrainHi) {
+        const { displayWidth, displayHeight } = this.terrain;
+        this.terrain.setTexture(wantHi ? 'terrain_hi' : 'terrain_lo').setDisplaySize(displayWidth, displayHeight);
+        this.terrainHi = wantHi;
+      }
     }
     const lerp = (from: number | undefined, to: number) => (from === undefined ? to : from + (to - from) * a);
 
@@ -548,13 +538,8 @@ export class GameScene extends Phaser.Scene {
         if (dead) view.head.setTint(0x66667a);
         else view.head.clearTint();
       }
+      this.drawTowerSocle(tw, x, y, t, dead);
       if (tw.overchargeFor > 0) g.lineStyle(4, 0xfff36b, 0.6 + Math.sin(t * 16) * 0.4).strokeCircle(x, y, TILE * 0.62);
-      // Pastilles de niveau.
-      for (let k = 0; k < tw.path.length; k++) {
-        const sx = x + (k - (tw.path.length - 1) / 2) * 11;
-        g.fillStyle(INK).fillCircle(sx, y + TILE * 0.52, 5.5);
-        g.fillStyle(0xffd84a).fillCircle(sx, y + TILE * 0.52, 3.6);
-      }
       if (tw.aiPriority !== 'normal') {
         g.fillStyle(INK).fillCircle(x + TILE * 0.42, y - TILE * 0.42, 7.5);
         g.fillStyle(tw.aiPriority === 'high' ? 0xffd84a : 0xff5d5d).fillCircle(x + TILE * 0.42, y - TILE * 0.42, 5.5);
@@ -732,6 +717,14 @@ export class GameScene extends Phaser.Scene {
           for (let i = 0; e.pts && i < e.pts.length; i += 2) next.push({ kind: 'burst', x1: e.pts[i], y1: e.pts[i + 1], x2: 0, y2: 0, r: 0.28, color: e.color, life: 0.2, max: 0.2, seed: i });
           if (e.splash) next.push({ kind: 'ring', x1: e.x2, y1: e.y2, x2: 0, y2: 0, r: e.splash, color: e.color, life: 0.3, max: 0.3 });
         }
+      } else if (e.kind === 'shot' && e.tower === 'baliste') {
+        // Canon à rails : un trait instantané sur toute la portée, qui transperce tout et s'estompe.
+        const fade = 1 - k;
+        const x1 = px(e.x1), y1 = px(e.y1), x2 = px(e.x2), y2 = px(e.y2);
+        f.lineStyle(14 * fade + 4, e.color, 0.25 * fade).lineBetween(x1, y1, x2, y2);
+        f.lineStyle(7, INK, 0.8 * fade).lineBetween(x1, y1, x2, y2);
+        f.lineStyle(4.5, e.color, fade).lineBetween(x1, y1, x2, y2);
+        f.lineStyle(1.8, 0xffffff, fade).lineBetween(x1, y1, x2, y2);
       } else if (e.kind === 'shot') {
         const x = px(e.x1 + (e.x2 - e.x1) * k);
         const y = px(e.y1 + (e.y2 - e.y1) * k);
@@ -804,6 +797,8 @@ export function createGame(parent: HTMLElement, map: GameMap) {
     scene,
     banner: false,
     input: { activePointers: 3 },
+    // Textures en puissances de deux + mipmaps : les illustrations restent lisses quand on dézoome.
+    render: { antialias: true, antialiasGL: true, mipmapFilter: 'LINEAR_MIPMAP_LINEAR', roundPixels: false },
   });
   /** À appeler quand la zone de jeu change de taille (en pixels CSS). */
   let lastW = 0;

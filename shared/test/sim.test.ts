@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Game, generateMap, TOWERS, ENEMIES, BOSS_POOL, GAME_CONFIG, WAVE_CONFIG, availableUpgrades, towerMaxHp, repairCost,
-  hpMultiplier, isBossWave, dist, inShape, waveEndBonus, decideHeroTask, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
+  hpMultiplier, isBossWave, dist, inShape, onBeam, waveEndBonus, decideHeroTask, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
 } from '../src/index';
 
 const DT = 1 / GAME_CONFIG.tickRate;
@@ -366,15 +366,33 @@ describe('amélioration de portée', () => {
 });
 
 describe('zones de tir et dépôt avancé', () => {
-  it('la ligne ne touche que ce qui est dans l’axe, le cône que ce qui est devant', () => {
-    const st = { shape: 'line' as const, range: 5, minRange: 0, beamWidth: 0.6, coneHalf: 0.8 };
-    expect(inShape(st, 0, 10, 10, 13, 10.4)).toBe(true);
-    expect(inShape(st, 0, 10, 10, 13, 11.5)).toBe(false);
-    expect(inShape(st, 0, 10, 10, 7, 10)).toBe(false);
-    expect(inShape(st, 2, 10, 10, 10, 13)).toBe(true);
-    const cone = { ...st, shape: 'cone' as const };
+  it('le trait perçant touche tout ce qui est aligné, le cône ce qui est devant', () => {
+    expect(onBeam(5, 0.6, 0, 10, 10, 13, 10.4)).toBe(true);
+    expect(onBeam(5, 0.6, 0, 10, 10, 13, 11.5)).toBe(false);
+    expect(onBeam(5, 0.6, 0, 10, 10, 7, 10)).toBe(false);
+    expect(onBeam(5, 0.6, Math.PI / 2, 10, 10, 10, 13)).toBe(true);
+    const cone = { shape: 'cone' as const, range: 5, minRange: 0, beamWidth: 0.6, coneHalf: 0.8 };
     expect(inShape(cone, 0, 10, 10, 12, 10.5)).toBe(true);
     expect(inShape(cone, 0, 10, 10, 10.5, 12)).toBe(false);
+  });
+  it('le canon à rails vise dans toutes les directions et transperce les ennemis alignés', () => {
+    const map = generateMap(4);
+    const game = new Game(map);
+    game.state.scrap = 5000;
+    const slot = map.slots[0];
+    game.apply('strategist', { c: 'build', slotId: slot.id, type: 'baliste' });
+    const t = game.state.towers[0];
+    const mk = (id: number, x: number, y: number) => ({ ...JSON.parse(JSON.stringify(game.state.enemies[0] ?? {})), id, type: 'grunt', x, y, hp: 1000, maxHp: 1000, shield: 0, d: 0, pathIdx: 0, slowFor: 0, slowFactor: 0, dotFor: 0, dotDps: 0, attackCd: 99, halted: 0, spawnCd: 0 });
+    // Trois ennemis alignés derrière la tour (à l'ouest), un à l'écart.
+    game.state.enemies = [mk(901, slot.x - 2, slot.y), mk(902, slot.x - 3, slot.y + 0.2), mk(903, slot.x - 4, slot.y - 0.2), mk(904, slot.x, slot.y + 3)] as any;
+    (t as any).cooldown = 0;
+    t.targeting = 'strong';
+    game.state.enemies[3].hp = 500;
+    game.state.enemies[0].hp = 2000;
+    (game as any).updateTowers(DT); // tir seul, sans déplacer les ennemis
+    const hit = game.state.enemies.filter((e) => e.hp < (e.id === 901 ? 2000 : e.id === 904 ? 500 : 1000)).map((e) => e.id).sort();
+    expect(hit).toEqual([901, 902, 903]);
+    expect(t.facing).toBe(4);
   });
   it('une tour en ligne transperce tous les ennemis alignés et peut être réorientée', () => {
     const map = generateMap(4);

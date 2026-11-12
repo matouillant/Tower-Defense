@@ -22,16 +22,23 @@ export function inShape(
   const dy = ey - ty;
   const d = Math.hypot(dx, dy);
   if (d > stats.range || d < stats.minRange) return false;
-  if (stats.shape === 'circle') return true;
+  if (stats.shape !== 'cone') return true; // la ligne pivote : sa portée de visée est un cercle
   const a = facingAngle(facing);
   const fwd = dx * Math.cos(a) + dy * Math.sin(a);
-  if (stats.shape === 'line') return fwd >= 0 && Math.abs(-dx * Math.sin(a) + dy * Math.cos(a)) <= stats.beamWidth;
   return d < 1e-6 || Math.acos(Math.max(-1, Math.min(1, fwd / d))) <= stats.coneHalf;
+}
+
+/** Le trait d'une tour en ligne, tiré de (tx, ty) vers un angle donné : touche-t-il (ex, ey) ? */
+export function onBeam(range: number, beamWidth: number, angle: number, tx: number, ty: number, ex: number, ey: number): boolean {
+  const dx = ex - tx;
+  const dy = ey - ty;
+  const fwd = dx * Math.cos(angle) + dy * Math.sin(angle);
+  return fwd >= 0 && fwd <= range && Math.abs(-dx * Math.sin(angle) + dy * Math.cos(angle)) <= beamWidth;
 }
 
 /** Orientation qui couvre le plus de cases de chemin depuis (x, y) : choisie à la pose, modifiable ensuite. */
 export function bestFacing(map: GameMap, stats: TowerStats, x: number, y: number, high: boolean): number {
-  if (stats.shape === 'circle') return 0;
+  if (stats.shape !== 'cone') return 0;
   const st = { ...stats, range: stats.range * (high ? 1 + MAP_CONFIG.highGroundRangeBonus : 1) };
   let best = 0;
   let bestN = -1;

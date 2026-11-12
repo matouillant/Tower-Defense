@@ -516,7 +516,7 @@ const pct = (v: number) => `${Math.round(v * 100)} %`;
 const fmt = (v: number) => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
 
 /** Les caractéristiques utiles d'une tour, en une phrase : dégâts, effets spéciaux, aura, production. */
-const SHAPE_NAME = { circle: 'circulaire', line: 'en ligne', cone: 'en cône' } as const;
+const SHAPE_NAME = { circle: 'circulaire', line: 'circulaire, tir perçant', cone: 'en cône' } as const;
 function zoneLabel(b: TowerStats): string {
   if (b.range > 0) return `portée ${b.range} (${SHAPE_NAME[b.shape]})`;
   if (b.auraRadius > 0) return `aura ${b.auraRadius} cases`;
@@ -638,8 +638,8 @@ function towerPanel(s: GameState, t: TowerState): string {
     return html;
   }
   html += upgradeSection(s, t, def, st);
-  if (st.shape !== 'circle' && st.range > 0) {
-    html += `<div class="section">Orientation ${st.shape === 'line' ? '(le tir suit cet axe)' : '(le cône vise cette direction)'}</div><div class="chips">
+  if (st.shape === 'cone' && st.range > 0) {
+    html += `<div class="section">Orientation (le cône vise cette direction)</div><div class="chips">
       <button data-act="rotate" data-id="${(t.facing + 7) % 8}">⟲</button>
       ${FACING_ARROWS.map((a, i) => `<button data-act="rotate" data-id="${i}" class="${t.facing === i ? 'on' : ''}">${a}</button>`).join('')}
       <button data-act="rotate" data-id="${(t.facing + 1) % 8}">⟳</button></div>`;

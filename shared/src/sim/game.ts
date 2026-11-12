@@ -27,7 +27,7 @@ import { RANGE_UPGRADE, rangeUpgradeCost, TOWERS } from '../config/towers';
 import type { GameMap, Vec2 } from '../map/types';
 import { Rng } from '../rng';
 import { decideHeroTask } from './ai';
-import { baseTowerStats, bestFacing, dist, inShape, effectiveTowerStats, heroStats, towerMaxHp } from './stats';
+import { baseTowerStats, bestFacing, dist, inShape, onBeam, effectiveTowerStats, heroStats, towerMaxHp } from './stats';
 import type {
   Command,
   EnemyState,
@@ -517,7 +517,9 @@ export class Game {
         }
         this.damageEnemy(e, amount, stats.pierceShield);
       };
-      const victims = stats.shape === 'line' ? s.enemies.filter((e) => e.hp > 0 && inShape(stats, t.facing, t.x, t.y, e.x, e.y)) : stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
+      const beamAngle = Math.atan2(ty - t.y, tx - t.x);
+      if (stats.shape === 'line') t.facing = ((Math.round(beamAngle / (Math.PI / 4)) % 8) + 8) % 8;
+      const victims = stats.shape === 'line' ? s.enemies.filter((e) => e.hp > 0 && onBeam(stats.range, stats.beamWidth, beamAngle, t.x, t.y, e.x, e.y)) : stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
       for (const e of victims) strike(e, damage);
       // Foudre : l'éclair rebondit de proche en proche sur des ennemis encore intacts, en perdant de la puissance.
       let chain: number[] | undefined;
@@ -545,7 +547,10 @@ export class Game {
           from = next;
         }
       }
-      this.emit({ t: 'shot', kind: t.type, fx: t.x, fy: t.y, tx, ty, splash: stats.splash, ...(chain?.length ? { chain } : {}) });
+      // Le trait perçant est dessiné jusqu'au bout de sa portée.
+      const ex = stats.shape === 'line' ? t.x + Math.cos(beamAngle) * stats.range : tx;
+      const ey = stats.shape === 'line' ? t.y + Math.sin(beamAngle) * stats.range : ty;
+      this.emit({ t: 'shot', kind: t.type, fx: t.x, fy: t.y, tx: ex, ty: ey, splash: stats.splash, ...(chain?.length ? { chain } : {}) });
     }
   }
 

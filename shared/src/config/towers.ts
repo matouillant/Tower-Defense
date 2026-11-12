@@ -49,7 +49,7 @@ export interface TowerStats {
   auraHeal: number;
   /** Ressources produites par seconde, sans rien tirer. */
   income: number;
-  /** Forme de la zone de tir : cercle, ligne droite (le tir transperce tout ce qui s'y trouve) ou cône. */
+  /** Forme du tir : cercle (cible unique), ligne (la tour pivote vers sa cible et le trait transperce tout ce qui est aligné, jusqu'à sa portée) ou cône fixe. */
   shape: 'circle' | 'line' | 'cone';
   /** Ligne : demi-largeur du faisceau, en cases. */
   beamWidth: number;
@@ -144,9 +144,9 @@ export const TOWERS: Record<TowerTypeId, TowerDef> = {
   givre: {
     id: 'givre',
     name: 'Émetteur cryo',
-    desc: 'Souffle un cône de froid : ralentit les ennemis, peu de dégâts.',
+    desc: 'Ralentit les ennemis autour de lui, peu de dégâts.',
     cost: 60,
-    base: base({ maxHp: 90, damage: 4, range: 3.4, cooldown: 1.1, slow: 0.3, slowDuration: 1.5, shape: 'cone', coneHalf: 0.8 }),
+    base: base({ maxHp: 90, damage: 4, range: 3, cooldown: 1.1, slow: 0.3, slowDuration: 1.5 }),
     nodes: [
       { id: 'blizzard', name: 'Blizzard', desc: 'Ralentit toute une zone.', cost: 70, parent: null, stats: { splash: 1.5, slow: 0.35, slowDuration: 2 } },
       { id: 'glace-vive', name: 'Glace vive', desc: 'Ralentissement fort sur une cible, avec des dégâts.', cost: 70, parent: null, stats: { damage: 22, slow: 0.55, slowDuration: 2.5 } },
@@ -168,7 +168,7 @@ export const TOWERS: Record<TowerTypeId, TowerDef> = {
   baliste: {
     id: 'baliste',
     name: 'Canon à rails',
-    desc: 'Tire en ligne droite et transperce tout ce qui s’y trouve ; munitions limitées, le héros doit la recharger.',
+    desc: 'Pivote vers sa cible et tire un trait qui transperce tous les ennemis alignés ; munitions limitées, le héros doit la recharger.',
     cost: 80,
     base: base({ maxHp: 100, damage: 55, range: 5, cooldown: 1.5, ammo: 24, shape: 'line', beamWidth: 0.6 }),
     nodes: [

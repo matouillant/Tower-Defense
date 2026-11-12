@@ -9,7 +9,7 @@ Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur e
 - **Une seule ressource** pour construire, améliorer et réparer.
 - **Cartes aléatoires** à partir d'une seed, **vagues infinies**, un boss toutes les 10 vagues.
 - **6 tourelles** (Canon, Givre, Baliste, Bobine Tesla, Rayon focalisé, Relais tactique) + le Dépôt avancé, chacune avec un arbre d'amélioration à 4 niveaux et des voies exclusives ; le bouton « Voir l'arbre » les détaille.
-- **Zones de tir variées** : circulaire, en ligne (le Canon à rails transperce tout l'axe) ou en cône (Émetteur cryo), orientables ; la zone s'affiche au clic sur une tour et avant la pose.
+- **Zones de tir variées** : circulaires ; le Canon à rails pivote à 360° et son trait transperce tous les ennemis alignés ; la zone s'affiche au clic sur une tour et avant la pose.
 - **Prime de fin de vague** croissante ; la partie se met en pause dès qu'on quitte l'onglet ou la fenêtre.
 - **Dépôt avancé** : bâtiment où le héros décharge ses ressources sans retourner à la base.
 - **13 types d'ennemis** variés en vitesse, taille, blindage et attaque (essaim, artilleur qui s'arrête pour tirer, sapeur kamikaze, soigneur, blindé, golem…) et 3 boss.
@@ -44,7 +44,7 @@ npm run typecheck
 
 Un seul service à héberger : le serveur Node sert aussi le client compilé et les WebSockets (`/ws`).
 
-- **Sur Vercel** : `vercel.json` est prêt. Le client est servi en statique et les WebSockets passent par la fonction `api/ws.js`, générée par `npm run build:api` à partir de `server/src/vercel.ts`. Limites propres à Vercel : les parties vivent dans la mémoire d'une instance de fonction (elles peuvent être perdues si Vercel en démarre une autre ou après un redéploiement), et chaque connexion est renouvelée au bout de la durée maximale de la fonction (le client se reconnecte tout seul).
+- **Sur Vercel** : `vercel.json` est prêt. Le client est servi en statique et les WebSockets passent par la fonction `api/ws.js`, générée par `npm run build:api` à partir de `server/src/vercel.ts`. Limites propres à Vercel : les parties vivent dans la mémoire d'une instance de fonction ; si Vercel en démarre une autre, le client renvoie automatiquement la dernière sauvegarde reçue et la partie reprend, et chaque connexion est renouvelée au bout de la durée maximale de la fonction (le client se reconnecte tout seul).
 - **Avec Docker** (Railway, Fly.io, Render, VPS) : c'est l'option la plus fiable pour des parties longues. : le `Dockerfile` à la racine suffit. Le port vient de la variable `PORT` (3000 par défaut).
 - **Sans Docker** : `npm ci && npm run build && npm start`.
 
