@@ -77,6 +77,26 @@ describe('salons', () => {
     expect(room.lobby().slots[1].status).toBe('ai');
   });
 
+  it('vitesse : appliquée seule face à l’IA, mais il faut l’accord des deux joueurs humains', () => {
+    const room = new RoomManager().create() as Room;
+    const p1 = room.join(fakeSocket(), 'Alice') as any;
+    room.handle(p1, { m: 'start' });
+    room.handle(p1, { m: 'speed', speed: 4 });
+    expect(room.speed).toBe(4);
+    const before = room.game!.state.tick;
+    room.tick(1000, DT);
+    expect(room.game!.state.tick).toBe(before + 4);
+
+    const p2 = room.join(fakeSocket(), 'Bob') as any;
+    expect(room.speed).toBe(1);
+    room.handle(p2, { m: 'speed', speed: 2 });
+    expect(room.speed).toBe(2);
+    room.handle(p2, { m: 'speed', speed: 4 });
+    expect(room.speed).toBe(4);
+    room.handle(p1, { m: 'speed', speed: 3 as any });
+    expect(room.speed).toBe(4);
+  });
+
   it('la partie se met en pause quand plus personne n’est connecté', () => {
     const room = new RoomManager().create() as Room;
     const p1 = room.join(fakeSocket(), 'Alice') as any;

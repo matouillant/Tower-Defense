@@ -28,10 +28,10 @@ export interface EnemyDef {
 }
 
 export const ENEMIES: Record<EnemyTypeId, EnemyDef> = {
-  grunt: { id: 'grunt', name: 'Fantassin', hp: 40, shield: 0, speed: 1.1, attack: 4, attackRange: 1.6, attackCooldown: 1.2, bounty: 5, cost: 2, fromWave: 1, leak: 1 },
-  runner: { id: 'runner', name: 'Coureur', hp: 22, shield: 0, speed: 2.2, attack: 2, attackRange: 1.3, attackCooldown: 1, bounty: 4, cost: 2, fromWave: 3, leak: 1 },
-  brute: { id: 'brute', name: 'Brute', hp: 160, shield: 0, speed: 0.7, attack: 14, attackRange: 1.8, attackCooldown: 1.5, bounty: 14, cost: 6, fromWave: 5, leak: 2 },
-  bouclier: { id: 'bouclier', name: 'Porte-bouclier', hp: 60, shield: 80, speed: 0.95, attack: 6, attackRange: 1.6, attackCooldown: 1.2, bounty: 11, cost: 5, fromWave: 8, leak: 1 },
+  grunt: { id: 'grunt', name: 'Fantassin', hp: 48, shield: 0, speed: 1.15, attack: 5, attackRange: 1.6, attackCooldown: 1.2, bounty: 5, cost: 2, fromWave: 1, leak: 1 },
+  runner: { id: 'runner', name: 'Coureur', hp: 22, shield: 0, speed: 2.2, attack: 3, attackRange: 1.3, attackCooldown: 1, bounty: 4, cost: 2, fromWave: 2, leak: 1 },
+  brute: { id: 'brute', name: 'Brute', hp: 160, shield: 0, speed: 0.7, attack: 18, attackRange: 1.8, attackCooldown: 1.5, bounty: 14, cost: 6, fromWave: 4, leak: 2 },
+  bouclier: { id: 'bouclier', name: 'Porte-bouclier', hp: 60, shield: 80, speed: 0.95, attack: 6, attackRange: 1.6, attackCooldown: 1.2, bounty: 11, cost: 5, fromWave: 7, leak: 1 },
   colosse: { id: 'colosse', name: 'Colosse', hp: 1600, shield: 0, speed: 0.45, attack: 40, attackRange: 2.4, attackCooldown: 2, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true },
   reine: { id: 'reine', name: 'Reine de l’essaim', hp: 1100, shield: 300, speed: 0.6, attack: 15, attackRange: 2, attackCooldown: 1.5, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true, spawns: 'runner', spawnEvery: 2.5 },
 };
@@ -42,8 +42,8 @@ export const WAVE_CONFIG = {
   /** Un boss toutes les X vagues. */
   bossEvery: 10,
   /** Budget de la vague n = baseBudget * budgetGrowth^(n-1). */
-  baseBudget: 16,
-  budgetGrowth: 1.13,
+  baseBudget: 28,
+  budgetGrowth: 1.11,
   /** PV des ennemis : hpGrowth^(n-1), puis croissance plus douce après softCapWave (rendements décroissants). */
   hpGrowth: 1.07,
   hpSoftCapWave: 40,

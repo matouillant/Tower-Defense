@@ -9,6 +9,7 @@ import {
   HERO_NODES,
   LobbyState,
   REWARDS,
+  SPEEDS,
   Role,
   ServerMessage,
   TOWERS,
@@ -25,6 +26,10 @@ import {
   salvageValue,
   towerMaxHp,
 } from '@td/shared';
+import '@fontsource/exo-2/500.css';
+import '@fontsource/exo-2/600.css';
+import '@fontsource/exo-2/800.css';
+import { ART } from './art';
 import { Net, loadSession, saveSession } from './net';
 import { GameScene, Tap, createGame } from './scene';
 
@@ -95,8 +100,8 @@ function renderLobby() {
     const saved = loadSession();
     render(
       el,
-      `<h1>Tower Defense coopératif</h1>
-      <p class="muted">Un stratège pose les tours, un héros les répare. Le héros peut être joué par l'IA, et remplacé à tout moment par un ami.</p>
+      `<div class="logo"><img src="${ART.hero.url}" alt="" /><div><h1>Boulon <span>&amp;</span> le Dôme</h1><p>Tower defense coopératif</p></div></div>
+      <p class="pitch">Un stratège pose les tourelles, Boulon le mécano les répare. Boulon peut être joué par l'IA, et remplacé à tout moment par un ami.</p>
       <div class="card">
         <label>Ton pseudo<input id="name" maxlength="20" value="${esc(saved?.name ?? '')}" placeholder="Joueur" /></label>
       </div>
@@ -126,7 +131,7 @@ function renderLobby() {
     .join('');
   render(
     el,
-    `<h1>Salon</h1>
+    `<div class="logo"><img src="${ART.hero.url}" alt="" /><div><h1>Boulon <span>&amp;</span> le Dôme</h1><p>Salon d'avant-partie</p></div></div>
     <div class="card">
       <div class="code">${lobby.code}</div>
       <button data-act="share">Partager le lien d'invitation</button>
@@ -184,6 +189,7 @@ net.onMessage = (msg: ServerMessage) => {
       if (role !== msg.role) panel = null;
       role = msg.role;
       if (!lobby.started) renderLobby();
+      else renderGame();
       break;
     case 'started':
       map = msg.map;
@@ -194,7 +200,7 @@ net.onMessage = (msg: ServerMessage) => {
         scene = created.scene;
         scene.onTap = onTap;
         // La zone de jeu change de taille quand le bandeau ou la barre se remplissent : on recale le canvas.
-        new ResizeObserver(([entry]) => created.game.scale.setParentSize(entry.contentRect.width, entry.contentRect.height)).observe($('stage'));
+        new ResizeObserver(([entry]) => created.resize(entry.contentRect.width, entry.contentRect.height)).observe($('stage'));
       } else scene.setMap(map);
       break;
     case 'state':
@@ -269,19 +275,35 @@ function renderGame() {
   if (!state || !map || !lobby) return;
   const s = state;
   const hs = heroStats(s.hero.upgrades);
-  const timer = s.phase === 'wave' ? `${s.enemies.length + s.toSpawn} ennemis` : `${Math.ceil(s.phaseTimer)} s`;
-  const next = s.phase !== 'wave' && isBossWave(s.wave + 1) ? ' · boss à la prochaine !' : '';
-  const heroLine = s.hero.respawnIn > 0 ? `à terre (${Math.ceil(s.hero.respawnIn)} s)` : `${Math.ceil(s.hero.hp)} PV · <span class="l">porte </span>${s.hero.carry}/${hs.carryCap}`;
-  // Deux libellés par info : le long sur grand écran, le court sur téléphone (choisi en CSS).
-  const info = (long: string, short: string, value: string) => `<span><span class="l">${long} </span><span class="s">${short}</span><b>${value}</b></span>`;
+  const heroLine = s.hero.respawnIn > 0 ? `à terre (${Math.ceil(s.hero.respawnIn)} s)` : `<b>${Math.ceil(s.hero.hp)}</b> PV · ${s.hero.carry}/${hs.carryCap}`;
+  const pill = (cls: string, icon: string, html: string) => `<span class="pill ${cls}">${icon}${html}</span>`;
+  const bolt = `<img src="${ART.bolt.url}" alt="" />`;
+  // Vitesse : celle appliquée est en surbrillance ; la mienne, si elle attend l'accord de l'autre, est en pointillés.
+  const mySpeed = lobby.slots.find((sl) => sl.role === role)?.speed ?? null;
+  const asked = Math.max(...lobby.slots.map((sl) => sl.speed ?? 0));
+  const speedBtns = SPEEDS.map((v) => {
+    const cls = v === lobby!.speed ? 'on' : v === mySpeed ? 'wait' : v === asked && asked > lobby!.speed ? 'asked' : '';
+    return `<button data-act="speed" data-id="${v}" class="${cls}" ${role ? '' : 'disabled'}>x${v}</button>`;
+  }).join('');
   render(
     $('hud'),
-    `${info('Vague', 'V', String(s.wave))}<span>${s.phase === 'wave' ? '' : `<span class="l">${PHASE_NAME[s.phase]} · </span>`}${timer}${next}</span>
-     ${info('Base', '♥ ', String(s.baseHp))}${info('Ressources', '⛭ ', String(Math.floor(s.scrap)))}
-     <span><span class="l">Héros (${s.heroController === 'ai' ? 'IA' : 'joueur'}) : </span><span class="s">${s.heroController === 'ai' ? 'IA' : 'Héros'} </span>${heroLine}</span>
-     <span class="grow"></span><span class="muted l">${role ? ROLE_NAME[role] : 'Spectateur'}</span>${online ? '' : '<span class="muted">hors ligne</span>'}
+    `${pill('wave', '', `<span class="l">Vague </span><span class="s">V</span><b>${s.wave}</b>`)}
+     ${pill('heart', '<i>♥</i>', `<b>${s.baseHp}</b>`)}${pill('scrap', bolt, `<b>${Math.floor(s.scrap)}</b>`)}
+     ${pill('hero', `<img src="${ART.hero.url}" alt="" />`, `<span class="l">${s.heroController === 'ai' ? 'IA · ' : ''}</span>${heroLine}`)}
+     <span class="grow"></span><span class="speed">${speedBtns}</span>
      ${s.heroController === 'ai' && s.ai.message ? `<span class="ai-msg">IA : ${esc(s.ai.message)}</span>` : ''}`,
   );
+  // Sur la carte : le gros bouton de lancement (stratège) ou le compte à rebours (autres joueurs).
+  let over = '';
+  if (s.phase === 'wave') over = `<span class="tag">${s.enemies.length + s.toSpawn} ennemi${s.enemies.length + s.toSpawn > 1 ? 's' : ''}</span>`;
+  else if (s.phase !== 'over') {
+    const label = `Vague ${s.wave + 1}${isBossWave(s.wave + 1) ? ' · BOSS' : ''}`;
+    over = role === 'strategist'
+      ? `<button class="launch" data-act="ready">▶ Lancer la ${label.toLowerCase()} <small>${Math.ceil(s.phaseTimer)} s</small></button>`
+      : `<span class="tag">${label} dans ${Math.ceil(s.phaseTimer)} s</span>`;
+  }
+  if (!online) over += `<span class="tag bad">hors ligne</span>`;
+  render($('overlay'), over);
   if (scene) scene.follow = role === 'hero';
   renderBar(s);
   renderPanel(s);
@@ -292,7 +314,6 @@ function renderGame() {
 function renderBar(s: GameState) {
   let html = '';
   if (role === 'strategist') {
-    if (s.phase !== 'wave') html += `<button class="primary" data-act="ready">Lancer la vague ▶</button>`;
     for (const id of Object.keys(ABILITIES) as AbilityId[]) {
       const cd = s.abilities[id];
       const needsTower = id === 'surcharge' && panel?.kind !== 'tower';
@@ -385,7 +406,7 @@ function renderPanel(s: GameState) {
     else {
       const high = map!.slots[panel.id].high;
       html = `<div class="panel-head"><h3>Construire${high ? ' (point haut : +20 % de portée)' : ''}</h3><button data-act="close">✕</button></div><div class="grid">${(Object.keys(TOWERS) as TowerTypeId[])
-        .map((id) => `<button data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${TOWERS[id].desc}</small></button>`)
+        .map((id) => `<button class="build" data-act="build" data-id="${id}" ${s.scrap < TOWERS[id].cost ? 'disabled' : ''}><img src="${ART[id === 'givre' ? 'givre' : id + '_head'].url}" alt="" /><span><b>${TOWERS[id].name}</b> · ${TOWERS[id].cost}<small>${TOWERS[id].desc}</small></span></button>`)
         .join('')}</div>`;
     }
   } else if (panel?.kind === 'deposit') {
@@ -458,6 +479,7 @@ $('game').addEventListener('pointerdown', (ev) => {
   switch (btn.dataset.act) {
     case 'close': movingTower = null; return select(null);
     case 'ready': cmd({ c: 'ready' }); break;
+    case 'speed': net.send({ m: 'speed', speed: Number(id) }); break;
     case 'ability':
       if (id === 'surcharge') cmd({ c: 'ability', id, towerId });
       else if (scene) {

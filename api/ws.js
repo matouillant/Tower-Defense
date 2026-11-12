@@ -4091,8 +4091,8 @@ var base = (s) => ({
 var TOWERS = {
   canon: {
     id: "canon",
-    name: "Canon",
-    desc: "Tour polyvalente.",
+    name: "Canon \xE0 plasma",
+    desc: "Tourelle polyvalente.",
     cost: 50,
     base: base({ maxHp: 120, damage: 12, range: 3.2, cooldown: 0.9 }),
     nodes: [
@@ -4110,7 +4110,7 @@ var TOWERS = {
   },
   givre: {
     id: "givre",
-    name: "Givre",
+    name: "\xC9metteur cryo",
     desc: "Ralentit les ennemis, peu de d\xE9g\xE2ts.",
     cost: 60,
     base: base({ maxHp: 90, damage: 4, range: 2.8, cooldown: 1.1, slow: 0.3, slowDuration: 1.5 }),
@@ -4125,7 +4125,7 @@ var TOWERS = {
   },
   baliste: {
     id: "baliste",
-    name: "Baliste",
+    name: "Canon \xE0 rails",
     desc: "Tr\xE8s puissante, mais \xE0 munitions limit\xE9es : le h\xE9ros doit la recharger.",
     cost: 80,
     base: base({ maxHp: 100, damage: 55, range: 4.5, cooldown: 1.5, ammo: 24 }),
@@ -4141,18 +4141,18 @@ var TOWERS = {
 };
 var SYNERGY_RANGE = 1.5;
 var SYNERGIES = [
-  { tower: "canon", neighbour: "givre", damageMult: 1.2, desc: "Canon pr\xE8s d\u2019un Givre : +20 % de d\xE9g\xE2ts." },
-  { tower: "canon", neighbour: "canon", cooldownMult: 0.92, desc: "Deux Canons voisins : cadence +8 %." },
-  { tower: "baliste", neighbour: "canon", rangeBonus: 0.5, desc: "Baliste pr\xE8s d\u2019un Canon : +0,5 de port\xE9e." },
-  { tower: "givre", neighbour: "givre", rangeBonus: 0.4, desc: "Deux Givres voisins : +0,4 de port\xE9e." }
+  { tower: "canon", neighbour: "givre", damageMult: 1.2, desc: "Plasma pr\xE8s d\u2019un Cryo : +20 % de d\xE9g\xE2ts." },
+  { tower: "canon", neighbour: "canon", cooldownMult: 0.92, desc: "Deux Plasmas voisins : cadence +8 %." },
+  { tower: "baliste", neighbour: "canon", rangeBonus: 0.5, desc: "Rails pr\xE8s d\u2019un Plasma : +0,5 de port\xE9e." },
+  { tower: "givre", neighbour: "givre", rangeBonus: 0.4, desc: "Deux Cryos voisins : +0,4 de port\xE9e." }
 ];
 
 // shared/src/config/enemies.ts
 var ENEMIES = {
-  grunt: { id: "grunt", name: "Fantassin", hp: 40, shield: 0, speed: 1.1, attack: 4, attackRange: 1.6, attackCooldown: 1.2, bounty: 5, cost: 2, fromWave: 1, leak: 1 },
-  runner: { id: "runner", name: "Coureur", hp: 22, shield: 0, speed: 2.2, attack: 2, attackRange: 1.3, attackCooldown: 1, bounty: 4, cost: 2, fromWave: 3, leak: 1 },
-  brute: { id: "brute", name: "Brute", hp: 160, shield: 0, speed: 0.7, attack: 14, attackRange: 1.8, attackCooldown: 1.5, bounty: 14, cost: 6, fromWave: 5, leak: 2 },
-  bouclier: { id: "bouclier", name: "Porte-bouclier", hp: 60, shield: 80, speed: 0.95, attack: 6, attackRange: 1.6, attackCooldown: 1.2, bounty: 11, cost: 5, fromWave: 8, leak: 1 },
+  grunt: { id: "grunt", name: "Fantassin", hp: 48, shield: 0, speed: 1.15, attack: 5, attackRange: 1.6, attackCooldown: 1.2, bounty: 5, cost: 2, fromWave: 1, leak: 1 },
+  runner: { id: "runner", name: "Coureur", hp: 22, shield: 0, speed: 2.2, attack: 3, attackRange: 1.3, attackCooldown: 1, bounty: 4, cost: 2, fromWave: 2, leak: 1 },
+  brute: { id: "brute", name: "Brute", hp: 160, shield: 0, speed: 0.7, attack: 18, attackRange: 1.8, attackCooldown: 1.5, bounty: 14, cost: 6, fromWave: 4, leak: 2 },
+  bouclier: { id: "bouclier", name: "Porte-bouclier", hp: 60, shield: 80, speed: 0.95, attack: 6, attackRange: 1.6, attackCooldown: 1.2, bounty: 11, cost: 5, fromWave: 7, leak: 1 },
   colosse: { id: "colosse", name: "Colosse", hp: 1600, shield: 0, speed: 0.45, attack: 40, attackRange: 2.4, attackCooldown: 2, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true },
   reine: { id: "reine", name: "Reine de l\u2019essaim", hp: 1100, shield: 300, speed: 0.6, attack: 15, attackRange: 2, attackCooldown: 1.5, bounty: 150, cost: 0, fromWave: 0, leak: 10, boss: true, spawns: "runner", spawnEvery: 2.5 }
 };
@@ -4161,8 +4161,8 @@ var WAVE_CONFIG = {
   /** Un boss toutes les X vagues. */
   bossEvery: 10,
   /** Budget de la vague n = baseBudget * budgetGrowth^(n-1). */
-  baseBudget: 16,
-  budgetGrowth: 1.13,
+  baseBudget: 28,
+  budgetGrowth: 1.11,
   /** PV des ennemis : hpGrowth^(n-1), puis croissance plus douce après softCapWave (rendements décroissants). */
   hpGrowth: 1.07,
   hpSoftCapWave: 40,
@@ -4196,8 +4196,8 @@ var isBossWave = (wave, cfg = WAVE_CONFIG) => wave > 0 && wave % cfg.bossEvery =
 var GAME_CONFIG = {
   tickRate: 20,
   snapshotRate: 10,
-  baseHp: 20,
-  startScrap: 220,
+  baseHp: 15,
+  startScrap: 160,
   prepDuration: 30,
   interDuration: 20,
   // --- Économie : une seule ressource pour construire, améliorer et réparer ---
@@ -4285,6 +4285,7 @@ var roleOfCommand = (cmd) => HERO_COMMANDS.has(cmd.c) ? "hero" : "strategist";
 // shared/src/protocol.ts
 var CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 var CODE_LENGTH = 5;
+var SPEEDS = [1, 2, 4];
 var normalizeCode = (code) => code.trim().toUpperCase();
 var isValidCode = (code) => code.length === CODE_LENGTH && [...code].every((ch) => CODE_ALPHABET.includes(ch));
 
@@ -5265,15 +5266,21 @@ var Room = class {
   }
   slotStatus(role) {
     const holder = this.slots[role] ? this.clients.get(this.slots[role]) : void 0;
-    if (holder && (holder.socket || !holder.away)) return { status: "human", name: holder.name };
-    if (holder) return { status: "reconnecting", name: holder.name };
-    return { status: role === "hero" ? "ai" : "open", name: null };
+    if (holder && (holder.socket || !holder.away)) return { status: "human", name: holder.name, speed: holder.speed };
+    if (holder) return { status: "reconnecting", name: holder.name, speed: null };
+    return { status: role === "hero" ? "ai" : "open", name: null, speed: null };
+  }
+  /** Vitesse appliquée : il faut l'accord de tous les joueurs humains, donc on prend la plus lente. */
+  get speed() {
+    const wanted = ROLES.map((r) => this.slotStatus(r).speed).filter((v) => v !== null);
+    return wanted.length ? Math.min(...wanted) : 1;
   }
   lobby() {
     return {
       code: this.code,
       seed: this.map.requestedSeed,
       started: !!this.game,
+      speed: this.speed,
       slots: ROLES.map((role) => ({ role, ...this.slotStatus(role) })),
       spectators: this.connected.filter((c) => !c.role).length
     };
@@ -5302,7 +5309,7 @@ var Room = class {
       if (client.role && this.slots[client.role] !== client.token) client.role = null;
     } else {
       if (this.clients.size >= MAX_CLIENTS_PER_ROOM) return "Cette partie est compl\xE8te.";
-      client = { token: (0, import_node_crypto.randomBytes)(16).toString("hex"), name, socket, role: null, disconnectedAt: 0, away: false };
+      client = { token: (0, import_node_crypto.randomBytes)(16).toString("hex"), name, socket, role: null, disconnectedAt: 0, away: false, speed: 1 };
       this.clients.set(client.token, client);
     }
     if (!client.role) {
@@ -5343,6 +5350,14 @@ var Room = class {
         client.role = null;
         this.syncHeroController();
         if (this.game && role === "hero") this.game.emit({ t: "msg", from: "jeu", text: "L\u2019IA reprend le h\xE9ros." });
+        this.broadcastLobby();
+        return;
+      }
+      case "speed": {
+        if (!client.role || !SPEEDS.includes(msg.speed)) return;
+        client.speed = msg.speed;
+        if (this.game && this.speed < msg.speed)
+          this.game.emit({ t: "msg", from: "jeu", text: `${client.name} propose la vitesse x${msg.speed}. Elle s\u2019appliquera quand l\u2019autre joueur l\u2019acceptera.` });
         this.broadcastLobby();
         return;
       }
@@ -5406,7 +5421,7 @@ var Room = class {
     }
     this.emptySince = 0;
     if (!this.game) return;
-    this.game.step(dt);
+    for (let i = this.speed; i > 0; i--) this.game.step(dt);
     this.tickCount++;
     const every = Math.max(1, Math.round(GAME_CONFIG.tickRate / GAME_CONFIG.snapshotRate));
     if (this.tickCount % every === 0) {

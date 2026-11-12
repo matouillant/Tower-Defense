@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@fontsource/exo-2": "^5.3.0",
     "@td/shared": "*",
     "phaser": "^3.87.0"
   },

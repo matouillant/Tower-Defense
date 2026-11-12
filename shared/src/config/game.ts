@@ -2,8 +2,8 @@
 export const GAME_CONFIG = {
   tickRate: 20,
   snapshotRate: 10,
-  baseHp: 20,
-  startScrap: 220,
+  baseHp: 15,
+  startScrap: 160,
   prepDuration: 30,
   interDuration: 20,
 

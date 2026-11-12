@@ -68,8 +68,8 @@ const base = (s: Partial<TowerStats>): TowerStats => ({
 export const TOWERS: Record<TowerTypeId, TowerDef> = {
   canon: {
     id: 'canon',
-    name: 'Canon',
-    desc: 'Tour polyvalente.',
+    name: 'Canon à plasma',
+    desc: 'Tourelle polyvalente.',
     cost: 50,
     base: base({ maxHp: 120, damage: 12, range: 3.2, cooldown: 0.9 }),
     nodes: [
@@ -87,7 +87,7 @@ export const TOWERS: Record<TowerTypeId, TowerDef> = {
   },
   givre: {
     id: 'givre',
-    name: 'Givre',
+    name: 'Émetteur cryo',
     desc: 'Ralentit les ennemis, peu de dégâts.',
     cost: 60,
     base: base({ maxHp: 90, damage: 4, range: 2.8, cooldown: 1.1, slow: 0.3, slowDuration: 1.5 }),
@@ -102,7 +102,7 @@ export const TOWERS: Record<TowerTypeId, TowerDef> = {
   },
   baliste: {
     id: 'baliste',
-    name: 'Baliste',
+    name: 'Canon à rails',
     desc: 'Très puissante, mais à munitions limitées : le héros doit la recharger.',
     cost: 80,
     base: base({ maxHp: 100, damage: 55, range: 4.5, cooldown: 1.5, ammo: 24 }),
@@ -130,8 +130,8 @@ export interface Synergy {
   desc: string;
 }
 export const SYNERGIES: Synergy[] = [
-  { tower: 'canon', neighbour: 'givre', damageMult: 1.2, desc: 'Canon près d’un Givre : +20 % de dégâts.' },
-  { tower: 'canon', neighbour: 'canon', cooldownMult: 0.92, desc: 'Deux Canons voisins : cadence +8 %.' },
-  { tower: 'baliste', neighbour: 'canon', rangeBonus: 0.5, desc: 'Baliste près d’un Canon : +0,5 de portée.' },
-  { tower: 'givre', neighbour: 'givre', rangeBonus: 0.4, desc: 'Deux Givres voisins : +0,4 de portée.' },
+  { tower: 'canon', neighbour: 'givre', damageMult: 1.2, desc: 'Plasma près d’un Cryo : +20 % de dégâts.' },
+  { tower: 'canon', neighbour: 'canon', cooldownMult: 0.92, desc: 'Deux Plasmas voisins : cadence +8 %.' },
+  { tower: 'baliste', neighbour: 'canon', rangeBonus: 0.5, desc: 'Rails près d’un Plasma : +0,5 de portée.' },
+  { tower: 'givre', neighbour: 'givre', rangeBonus: 0.4, desc: 'Deux Cryos voisins : +0,4 de portée.' },
 ];

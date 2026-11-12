@@ -8,6 +8,7 @@ import {
   GameMap,
   LobbyState,
   Role,
+  SPEEDS,
   ServerMessage,
   SlotStatus,
   generateMap,
@@ -28,6 +29,8 @@ interface Client {
   disconnectedAt: number;
   /** Absent depuis assez longtemps pour que l'IA prenne le relais. */
   away: boolean;
+  /** Vitesse de jeu souhaitée par ce joueur. */
+  speed: number;
 }
 
 const ROLES: Role[] = ['strategist', 'hero'];
@@ -55,11 +58,17 @@ export class Room {
     return [...this.clients.values()].filter((c) => c.socket);
   }
 
-  private slotStatus(role: Role): { status: SlotStatus; name: string | null } {
+  private slotStatus(role: Role): { status: SlotStatus; name: string | null; speed: number | null } {
     const holder = this.slots[role] ? this.clients.get(this.slots[role]!) : undefined;
-    if (holder && (holder.socket || !holder.away)) return { status: 'human', name: holder.name };
-    if (holder) return { status: 'reconnecting', name: holder.name };
-    return { status: role === 'hero' ? 'ai' : 'open', name: null };
+    if (holder && (holder.socket || !holder.away)) return { status: 'human', name: holder.name, speed: holder.speed };
+    if (holder) return { status: 'reconnecting', name: holder.name, speed: null };
+    return { status: role === 'hero' ? 'ai' : 'open', name: null, speed: null };
+  }
+
+  /** Vitesse appliquée : il faut l'accord de tous les joueurs humains, donc on prend la plus lente. */
+  get speed(): number {
+    const wanted = ROLES.map((r) => this.slotStatus(r).speed).filter((v): v is number => v !== null);
+    return wanted.length ? Math.min(...wanted) : 1;
   }
 
   lobby(): LobbyState {
@@ -67,6 +76,7 @@ export class Room {
       code: this.code,
       seed: this.map.requestedSeed,
       started: !!this.game,
+      speed: this.speed,
       slots: ROLES.map((role) => ({ role, ...this.slotStatus(role) })),
       spectators: this.connected.filter((c) => !c.role).length,
     };
@@ -101,7 +111,7 @@ export class Room {
       if (client.role && this.slots[client.role] !== client.token) client.role = null;
     } else {
       if (this.clients.size >= MAX_CLIENTS_PER_ROOM) return 'Cette partie est complète.';
-      client = { token: randomBytes(16).toString('hex'), name, socket, role: null, disconnectedAt: 0, away: false };
+      client = { token: randomBytes(16).toString('hex'), name, socket, role: null, disconnectedAt: 0, away: false, speed: 1 };
       this.clients.set(client.token, client);
     }
     if (!client.role) {
@@ -144,6 +154,14 @@ export class Room {
         client.role = null;
         this.syncHeroController();
         if (this.game && role === 'hero') this.game.emit({ t: 'msg', from: 'jeu', text: 'L’IA reprend le héros.' });
+        this.broadcastLobby();
+        return;
+      }
+      case 'speed': {
+        if (!client.role || !SPEEDS.includes(msg.speed)) return;
+        client.speed = msg.speed;
+        if (this.game && this.speed < msg.speed)
+          this.game.emit({ t: 'msg', from: 'jeu', text: `${client.name} propose la vitesse x${msg.speed}. Elle s’appliquera quand l’autre joueur l’acceptera.` });
         this.broadcastLobby();
         return;
       }
@@ -212,7 +230,7 @@ export class Room {
     }
     this.emptySince = 0;
     if (!this.game) return;
-    this.game.step(dt);
+    for (let i = this.speed; i > 0; i--) this.game.step(dt);
     this.tickCount++;
     const every = Math.max(1, Math.round(GAME_CONFIG.tickRate / GAME_CONFIG.snapshotRate));
     if (this.tickCount % every === 0) {

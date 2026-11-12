@@ -1,4 +1,6 @@
-# Tower Defense coopératif
+# Boulon & le Dôme
+
+Tower defense coopératif de science-fiction, vu de dessus.
 
 Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur et mobile).
 
@@ -66,7 +68,7 @@ Tout se règle dans `shared/src/config/`, sans toucher au code :
 
 Valeurs de départ, à ajuster en jouant :
 
-- Budget de la vague n : `16 × 1,13^(n-1)`, plafonné à 60 ennemis (le surplus devient des PV).
+- Budget de la vague n : `28 × 1,11^(n-1)`, plafonné à 60 ennemis (le surplus devient des PV).
 - PV des ennemis : `×1,07` par vague jusqu'à la vague 40, puis `×1,035`.
 - Attaque des ennemis : `×1,03` par vague, plafonnée à ×6. Primes : `×1,04`, plafonnées à ×5.
 - Boss toutes les 10 vagues, PV `×1,9` à chaque apparition, puis choix d'une récompense parmi trois.
@@ -74,12 +76,12 @@ Valeurs de départ, à ajuster en jouant :
 - Pendant une vague, la réparation plafonne à 70 % des PV ; entre deux vagues, elle est complète.
 - 40 % de la prime va directement au stock, 60 % tombe au sol et doit être ramassée par le héros.
 
-Ces chiffres n'ont pas encore été réglés par des parties réelles. Dans les tests automatiques, un stratège simpliste accompagné de l'IA tient 14 à 15 vagues.
+Ces chiffres n'ont pas encore été réglés par des parties réelles. La vitesse de jeu (x1, x2, x4) ne s'applique que si tous les joueurs humains la demandent.
 
 ## Limites connues du prototype
 
 - Pas de pause ni de ralenti à l'arrivée d'un nouveau joueur.
 - Le « changement de mode » d'une tour se limite au choix de la cible.
 - Le chemin des ennemis n'est pas modifiable par les joueurs.
-- Formes géométriques uniquement, pas de sons.
+- Illustrations originales en SVG (`client/src/art/`), pas encore de sons ni de musique.
 - Sur téléphone : glisser pour déplacer la carte, pincer pour zoomer ; l'affichage n'est pas encore net sur les écrans haute densité.

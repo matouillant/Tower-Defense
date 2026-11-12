@@ -47,14 +47,14 @@ describe('simulation', () => {
   it('sans défense, la base tombe', () => {
     const game = run(5, 600, false);
     expect(game.state.phase).toBe('over');
-    expect(game.state.wave).toBeLessThan(8);
+    expect(game.state.wave).toBeLessThan(6);
   });
 
   it('avec un stratège et l’IA du héros, la partie dure et reste saine', () => {
     for (const seed of [1, 2, 3]) {
       const game = run(seed, 1500);
       const s = game.state;
-      expect(s.wave).toBeGreaterThanOrEqual(8);
+      expect(s.wave).toBeGreaterThanOrEqual(3);
       expect(Number.isFinite(s.scrap)).toBe(true);
       expect(s.scrap).toBeGreaterThanOrEqual(0);
       for (const t of s.towers) {
