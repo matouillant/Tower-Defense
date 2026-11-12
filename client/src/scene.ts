@@ -120,57 +120,105 @@ export class GameScene extends Phaser.Scene {
   create() {
     this.ready = true;
     if (this.map) this.drawStatic();
-    // Un appui court sélectionne ; glisser déplace la carte ; pincer (ou la molette) zoome.
-    let pressed = false;
+    this.setupGestures();
+    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => this.zoomBy(dy > 0 ? 0.9 : 1.1));
+    this.scale.on('resize', () => this.layout());
+    this.layout(true);
+  }
+
+  /**
+   * Gestes tactiles et souris gérés directement avec les événements natifs du navigateur (et non le suivi de Phaser) :
+   * chaque doigt est suivi par son identifiant, et un relâchement ou une annulation perdus ne peuvent plus bloquer la carte.
+   * Un appui court sélectionne ; glisser déplace la carte ; pincer (ou la molette) zoome.
+   */
+  private setupGestures() {
+    const canvas = this.game.canvas;
+    const pts = new Map<number, { x: number; y: number; sx: number; sy: number }>();
     let dragging = false;
-    let startX = 0;
-    let startY = 0;
     let pinch = 0;
-    const p1 = this.input.pointer1;
-    const p2 = this.input.pointer2;
-    const gap = () => Math.hypot(p1.x - p2.x, p1.y - p2.y);
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (p1.isDown && p2.isDown) {
-        pinch = gap();
-        dragging = true;
-        return;
-      }
-      pressed = true;
+    let tapCandidate = false;
+    const local = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      return { x: (e.clientX - r.left) * DPR, y: (e.clientY - r.top) * DPR };
+    };
+    const reset = () => {
+      pts.clear();
       dragging = false;
-      startX = p.x;
-      startY = p.y;
+      pinch = 0;
+      tapCandidate = false;
+    };
+    const twoGap = () => {
+      const [a, b] = [...pts.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* sans capture, on garde quand même le suivi */
+      }
+      // Plus de deux doigts déclarés : un relâchement a été perdu, on repart de zéro.
+      if (pts.size >= 2) reset();
+      const p = local(e);
+      pts.set(e.pointerId, { ...p, sx: p.x, sy: p.y });
+      if (pts.size === 1) {
+        dragging = false;
+        tapCandidate = true;
+      } else {
+        tapCandidate = false;
+        dragging = true;
+        pinch = twoGap();
+      }
     });
-    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (!pressed || !p.isDown) return;
-      if (p1.isDown && p2.isDown) {
-        const d = gap();
+    canvas.addEventListener('pointermove', (e) => {
+      const q = pts.get(e.pointerId);
+      if (!q) return;
+      const p = local(e);
+      const dx = p.x - q.x;
+      const dy = p.y - q.y;
+      q.x = p.x;
+      q.y = p.y;
+      if (pts.size >= 2) {
+        const d = twoGap();
         if (pinch > 0 && d > 0) this.zoomBy(d / pinch);
         pinch = d;
-        dragging = true;
         return;
       }
-      if (!dragging && Math.hypot(p.x - startX, p.y - startY) > 10 * DPR) dragging = true;
+      if (!dragging && Math.hypot(p.x - q.sx, p.y - q.sy) > 10 * DPR) {
+        dragging = true;
+        tapCandidate = false;
+      }
       if (dragging && this.canPan()) {
         this.camTarget = null;
-        this.cx -= (p.x - p.prevPosition.x) / this.zoom;
-        this.cy -= (p.y - p.prevPosition.y) / this.zoom;
+        this.cx -= dx / this.zoom;
+        this.cy -= dy / this.zoom;
         this.lastDrag = performance.now();
         this.applyCamera();
       }
     });
-    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
-      const tap = pressed && !dragging;
-      if (!p1.isDown && !p2.isDown) pinch = 0;
-      if (!this.input.activePointer.isDown && !p1.isDown && !p2.isDown) pressed = false;
+    const end = (e: PointerEvent, cancelled: boolean) => {
+      if (!pts.has(e.pointerId)) return;
+      const tap = !cancelled && tapCandidate && pts.size === 1;
+      const p = local(e);
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinch = 0;
+      if (pts.size === 0) {
+        dragging = false;
+        tapCandidate = false;
+      }
       if (!tap || !this.map || !this.cur) return;
-      pressed = false;
-      const x = p.worldX / TILE - 0.5;
-      const y = p.worldY / TILE - 0.5;
+      const w = this.cameras.main.getWorldPoint(p.x, p.y);
+      const x = w.x / TILE - 0.5;
+      const y = w.y / TILE - 0.5;
       this.onTap(this.resolveTap(x, y), x, y);
-    });
-    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => this.zoomBy(dy > 0 ? 0.9 : 1.1));
-    this.scale.on('resize', () => this.layout());
-    this.layout(true);
+    };
+    canvas.addEventListener('pointerup', (e) => end(e, false));
+    canvas.addEventListener('pointercancel', (e) => end(e, true));
+    canvas.addEventListener('lostpointercapture', (e) => end(e, true));
+    // Filets de sécurité : application en arrière-plan, perte de focus.
+    window.addEventListener('blur', reset);
+    document.addEventListener('visibilitychange', reset);
   }
 
   // ------------------------------------------------------------------ caméra
@@ -796,7 +844,8 @@ export function createGame(parent: HTMLElement, map: GameMap) {
     scale: { mode: Phaser.Scale.NONE, width: Math.max(1, rect.width) * DPR, height: Math.max(1, rect.height) * DPR, zoom: 1 / DPR, expandParent: false },
     scene,
     banner: false,
-    input: { activePointers: 3 },
+    // Le tactile est géré par nos propres gestes (setupGestures) ; Phaser garde la souris pour la molette.
+    input: { activePointers: 1, touch: false },
     // Textures en puissances de deux + mipmaps : les illustrations restent lisses quand on dézoome.
     render: { antialias: true, antialiasGL: true, mipmapFilter: 'LINEAR_MIPMAP_LINEAR', roundPixels: false },
   });

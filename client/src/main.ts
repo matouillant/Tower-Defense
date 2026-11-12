@@ -328,6 +328,8 @@ net.onMessage = (msg: ServerMessage) => {
       scene?.reset();
       $('lobby').hidden = true;
       $('game').hidden = false;
+      // Un champ du salon resté actif garderait le clavier (et sa barre de presse-papiers) ouvert sur mobile.
+      (document.activeElement as HTMLElement | null)?.blur?.();
       if (!scene) {
         const created = createGame($('canvas'), map);
         scene = created.scene;
