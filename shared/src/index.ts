@@ -5,6 +5,7 @@ export * from './map/validate';
 export * from './config/map';
 export * from './config/towers';
 export * from './config/traps';
+export * from './config/meta';
 export * from './config/enemies';
 export * from './config/game';
 export * from './sim/types';

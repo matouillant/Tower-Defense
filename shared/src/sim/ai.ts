@@ -27,7 +27,7 @@ export function decideHeroTask(game: Game): HeroTask | null {
   const s = game.state;
   const hero = s.hero;
   if (hero.respawnIn > 0) return null;
-  const stats = heroStats(hero.upgrades);
+  const stats = heroStats(hero.upgrades, hero.perks);
   const posture = POSTURES[s.ai.posture];
   const inWave = s.phase === 'wave';
   const enemyNear = (x: number, y: number, r: number) => r > 0 && s.enemies.some((e) => dist(e.x, e.y, x, y) <= r);

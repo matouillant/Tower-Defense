@@ -309,7 +309,7 @@ button.up:disabled { opacity: 0.6; }
 @media (max-width: 700px) { .cards { grid-template-columns: repeat(3, 1fr); } .card.build b { font-size: 11px; } }
 
 .chip, .deltas, button.up small { text-transform: none; letter-spacing: 0; }
-button.primary { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 10px #0f1a34; }
+.detail button.primary { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 10px #0f1a34; }
 @media (max-width: 700px) {
   .card.build img { width: 34px; height: 34px; }
   .card.build small { display: none; }
@@ -338,3 +338,18 @@ svg.curve { width: 100%; height: 70px; display: block; margin: 4px 0; border-rad
 
 .setrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; flex-wrap: wrap; }
 .setrow > span { font-weight: 700; }
+
+/* ---- Campagne et talents ---- */
+.missions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+button.mission { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; padding: 8px 10px; }
+button.mission small { grid-column: 1 / -1; color: var(--muted); text-transform: none; letter-spacing: 0; }
+button.mission.on { border-color: var(--neon); box-shadow: 0 0 0 2px var(--neon); }
+.stars { color: #ffd84a; letter-spacing: 2px; }
+.stars.big { font-size: 28px; display: block; text-align: center; }
+.mission-res { text-align: center; margin: 4px 0 8px; }
+.mission-res small { display: block; color: var(--muted); }
+.gain { text-align: center; color: #b58cff; font-weight: 800; margin: 4px 0 8px; }
+.shards { color: #b58cff; font-weight: 800; margin-left: auto; margin-right: 8px; }
+.talent { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #ffffff14; }
+.talent small { display: block; color: var(--muted); }
+button.mission.on { background: #12304a; color: #fff; }

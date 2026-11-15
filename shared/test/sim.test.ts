@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   Game, generateMap, TOWERS, ENEMIES, BOSS_POOL, GAME_CONFIG, WAVE_CONFIG, availableUpgrades, towerMaxHp, repairCost,
-  hpMultiplier, isBossWave, dist, inShape, onBeam, waveEndBonus, decideHeroTask, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
+  hpMultiplier, isBossWave, dist, inShape, onBeam, heroStats, towerPrice, MISSIONS, missionStars, waveEndBonus, decideHeroTask, TowerTypeId, reviveCost, baseTowerStats, effectiveTowerStats, EnemyTypeId,
 } from '../src/index';
 
 const DT = 1 / GAME_CONFIG.tickRate;
@@ -561,5 +561,37 @@ describe('pièges', () => {
     expect(trap.hp).toBe(0);
     expect(e.hp).toBeLessThanOrEqual(0);
     expect(game.state.stats.bySource.piege?.kills).toBe(1);
+  });
+});
+
+describe('progression et campagne', () => {
+  it('les talents changent le départ, les prix et le héros', () => {
+    const base = new Game(generateMap(3), 'normal');
+    const g = new Game(generateMap(3), 'normal', { perks: { tresor: 2, remparts: 1, ingenieur: 3, endurance: 3 }, heroPerks: { endurance: 2, bottes: 9 as number } });
+    expect(g.state.scrap).toBe(base.state.scrap + 50);
+    expect(g.state.baseHp).toBe(base.state.baseHp + 2);
+    expect(g.state.perks.endurance).toBeUndefined(); // talent héros ignoré côté stratège
+    expect(g.state.hero.hp).toBe(Math.round(100 * 1.24));
+    expect(heroStats([], g.state.hero.perks).speed).toBeCloseTo(heroStats([]).speed * 1.18, 5); // rang plafonné à 3
+    g.state.scrap = 1000;
+    g.apply('strategist', { c: 'build', slotId: 0, type: 'canon' });
+    expect(1000 - g.state.scrap).toBe(towerPrice('canon', { ingenieur: 3 }));
+  });
+  it('une mission se gagne en tenant le nombre de vagues demandé, avec ses contraintes', () => {
+    const m = MISSIONS.find((q) => q.id === 'artisans')!;
+    const g = new Game(generateMap(m.seed), 'normal', { mission: m.id });
+    expect(g.state.difficulty).toBe(m.difficulty);
+    g.state.scrap = 5000;
+    expect(g.apply('strategist', { c: 'build', slotId: 0, type: 'laser' })).toBeTruthy();
+    expect(g.apply('strategist', { c: 'build', slotId: 0, type: 'canon' })).toBeNull();
+    g.state.wave = m.waves;
+    g.state.phase = 'wave';
+    g.state.enemies = [];
+    (g as any).spawnQueue = [];
+    g.step(DT);
+    expect(g.state.won).toBe(true);
+    expect(g.state.phase).toBe('over');
+    expect(missionStars(true, g.state.baseHp, g.state.stats.baseHpStart)).toBe(3);
+    expect(missionStars(true, 1, 15)).toBe(1);
   });
 });

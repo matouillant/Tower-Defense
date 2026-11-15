@@ -2,6 +2,7 @@ import type { GameMap } from './map/types';
 import type { Command, GameEvent, GameState, Role } from './sim/types';
 import type { SimSave } from './sim/game';
 import type { Difficulty } from './config/enemies';
+import type { MissionId, Perks } from './config/meta';
 
 /** Alphabet des codes de partie : sans caractères ambigus (0/O, 1/I/L). */
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -34,6 +35,7 @@ export interface LobbyState {
   /** Nombre de spectateurs connectés sans rôle. */
   spectators: number;
   difficulty: Difficulty;
+  mission: MissionId | null;
 }
 
 /** Client -> serveur. */
@@ -47,6 +49,10 @@ export type ClientMessage =
   | { m: 'start' }
   /** Choix de la difficulté (stratège, avant le lancement ou pour la prochaine partie). */
   | { m: 'difficulty'; level: Difficulty }
+  /** Mission de campagne (stratège, avant le lancement) ; null = partie libre. */
+  | { m: 'mission'; id: MissionId | null }
+  /** Talents du joueur, envoyés à l'entrée dans le salon. */
+  | { m: 'profile'; talents: Perks }
   /** Relancer une partie dans le même salon (nouvelle carte, ou la même). Le stratège à tout moment, n'importe quel joueur une fois la base tombée. */
   | { m: 'restart'; sameMap?: boolean }
   /** Quitter le salon : le rôle est libéré tout de suite (le héros repasse à l'IA). */

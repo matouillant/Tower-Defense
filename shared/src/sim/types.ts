@@ -2,6 +2,7 @@ import type { Difficulty, EnemyTypeId } from '../config/enemies';
 import type { AbilityId, RewardId } from '../config/game';
 import type { TowerTypeId } from '../config/towers';
 import type { TrapTypeId } from '../config/traps';
+import type { MissionId, Perks } from '../config/meta';
 
 export type Role = 'strategist' | 'hero';
 export type Phase = 'prep' | 'wave' | 'inter' | 'over';
@@ -113,6 +114,8 @@ export interface HeroState {
   /** Le délai est écoulé mais le stock ne suffit pas à payer la remise en route : le héros attend. */
   waitingRevive: boolean;
   upgrades: string[];
+  /** Talents du héros (progression entre parties). */
+  perks: Perks;
 }
 
 export interface AiOrder {
@@ -170,10 +173,15 @@ export interface GameState {
   stats: GameStats;
   /** Partie gagnée (objectif de mission atteint). */
   won: boolean;
+  /** Talents du stratège appliqués à la partie. */
+  perks: Perks;
+  /** Mission de campagne en cours (null en partie libre). */
+  mission: { id: MissionId; waves: number } | null;
 }
 
 /** Statistiques de la partie, pour le bilan de fin. */
 export interface GameStats {
+  baseHpStart: number;
   /** Dégâts et ennemis achevés, par source : type de tourelle, « hero », « competence », « piege ». */
   bySource: Record<string, { damage: number; kills: number }>;
   kills: number;

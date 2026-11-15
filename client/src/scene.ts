@@ -865,7 +865,7 @@ export class GameScene extends Phaser.Scene {
         .setDisplaySize(size, size)
         .setRotation(this.heroFacing + (working ? Math.sin(t * 20) * 0.18 : 0))
         .setDepth(150);
-      const stats = heroStats(h.upgrades);
+      const stats = heroStats(h.upgrades, h.perks);
       this.bar(g, x, y - size * 0.74, TILE * 0.8, 6, h.hp / stats.maxHp, 0x5fe07a);
       if (h.carry > 0) this.bar(g, x, y - size * 0.74 + 9, TILE * 0.8, 4, h.carry / stats.carryCap, 0xffd84a);
       if (working) {

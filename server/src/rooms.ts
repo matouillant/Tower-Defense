@@ -6,6 +6,10 @@ import {
   GAME_CONFIG,
   Game,
   GameMap,
+  MissionId,
+  Perks,
+  cleanPerks,
+  missionById,
   DIFFICULTIES,
   Difficulty,
   GameState,
@@ -35,6 +39,8 @@ interface Client {
   away: boolean;
   /** Vitesse de jeu souhaitée par ce joueur. */
   speed: number;
+  /** Talents du joueur (progression gardée sur son appareil). */
+  talents?: Perks;
 }
 
 const ROLES: Role[] = ['strategist', 'hero'];
@@ -57,6 +63,8 @@ export class Room {
   /** Joueur qui a mis la partie en pause (null = elle tourne). */
   pausedBy: string | null = null;
   difficulty: Difficulty = 'difficile';
+  /** Mission de campagne choisie (null = partie libre). */
+  mission: MissionId | null = null;
   emptySince = 0;
 
   constructor(readonly code: string, seed: number) {
@@ -91,6 +99,7 @@ export class Room {
       slots: ROLES.map((role) => ({ role, ...this.slotStatus(role) })),
       spectators: this.connected.filter((c) => !c.role).length,
       difficulty: this.difficulty,
+      mission: this.mission,
     };
   }
 
@@ -120,6 +129,7 @@ export class Room {
   restoreGame(state: GameState, sim: SimSave, paused: boolean, by: string) {
     this.game = Game.restore(this.map, state, sim);
     if (state.difficulty in DIFFICULTIES) this.difficulty = state.difficulty;
+    this.mission = missionById(state.mission?.id)?.id ?? null;
     this.pausedBy = paused ? by : null;
     this.pending = 0;
   }
@@ -207,6 +217,17 @@ export class Room {
         this.sendState(); // pour que le message s'affiche tout de suite, même en pause
         return;
       }
+      case 'profile': {
+        client.talents = { ...cleanPerks(msg.talents, 'strategist'), ...cleanPerks(msg.talents, 'hero') };
+        return;
+      }
+      case 'mission': {
+        if (client.role !== 'strategist') return;
+        this.mission = missionById(msg.id)?.id ?? null;
+        if (this.mission && !this.game) this.map = generateMap(missionById(this.mission)!.seed);
+        this.broadcastLobby();
+        return;
+      }
       case 'difficulty': {
         if (client.role !== 'strategist' || !(msg.level in DIFFICULTIES)) return;
         this.difficulty = msg.level;
@@ -224,7 +245,7 @@ export class Room {
         const over = this.game.state.phase === 'over';
         if (!over && client.role !== 'strategist') return this.send(client, { m: 'error', text: 'Seul le stratège peut relancer une partie en cours.' });
         // Même salon, mêmes joueurs, mêmes rôles : seule la carte change (sauf si on rejoue la même).
-        this.map = generateMap(msg.sameMap ? this.map.requestedSeed : randomInt(2 ** 32));
+        if (!this.mission) this.map = generateMap(msg.sameMap ? this.map.requestedSeed : randomInt(2 ** 32));
         this.begin();
         return;
       }
@@ -251,7 +272,15 @@ export class Room {
 
   /** Démarre (ou redémarre) la partie avec la carte du salon, pour tous les joueurs connectés. */
   private begin() {
-    this.game = new Game(this.map, this.difficulty);
+    const mission = missionById(this.mission);
+    if (mission && this.map.requestedSeed !== mission.seed) this.map = generateMap(mission.seed);
+    const strat = this.slots.strategist ? this.clients.get(this.slots.strategist) : undefined;
+    const heroHuman = this.slots.hero ? this.clients.get(this.slots.hero) : undefined;
+    this.game = new Game(this.map, this.difficulty, {
+      perks: strat?.talents,
+      heroPerks: heroHuman ? heroHuman.talents : strat?.talents,
+      mission: mission?.id ?? null,
+    });
     this.pausedBy = null;
     this.pending = 0;
     this.syncHeroController();

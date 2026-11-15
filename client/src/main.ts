@@ -8,6 +8,14 @@ import {
   GameMap,
   GameState,
   HERO_NODES,
+  MISSIONS,
+  MissionId,
+  TALENTS,
+  TalentId,
+  missionById,
+  rank,
+  towerPrice,
+  trapPrice,
   TRAPS,
   TRAP_CONFIG,
   TrapState,
@@ -46,6 +54,7 @@ import '@fontsource/exo-2/800.css';
 import { ART, towerIcon } from './art';
 import { Net, loadSession, saveSession } from './net';
 import { audio } from './audio';
+import { award, buyTalent, missionUnlocked, nextCost, profile, resetTalents } from './profile';
 import { saveFxQuality } from './effects';
 import { GameScene, Tap, createGame } from './scene';
 
@@ -218,7 +227,9 @@ function renderLobby() {
     <div class="card"><b>Joueurs</b>${slots}
       <small>Si personne ne prend le héros, l'IA le joue. Un ami peut la remplacer en cours de partie avec le code.</small>
     </div>
-    <div class="card"><b>Difficulté</b>${difficultyChips()}</div>
+    ${modeCard()}
+    ${lobby.mission ? '' : `<div class="card"><b>Difficulté</b>${difficultyChips()}</div>`}
+    ${talentsCard()}
     ${role === 'strategist' ? '<button class="primary" data-act="start">Lancer la partie</button>' : '<p class="muted">En attente du stratège pour lancer la partie.</p>'}
     <button data-act="home">Quitter ce salon</button>${fsButton()}`,
   );
@@ -249,11 +260,63 @@ $('lobby').addEventListener('click', (ev) => {
   else if (act === 'take') net.send({ m: 'take', role: btn.dataset.role as Role });
   else if (act === 'release') net.send({ m: 'release' });
   else if (act === 'start') net.send({ m: 'start' });
+  else if (act === 'mission') net.send({ m: 'mission', id: (btn.dataset.id || null) as MissionId | null });
+  else if (act === 'campaign') {
+    showCampaign = true;
+    const first = [...MISSIONS].reverse().find((m) => missionUnlocked(m.id)) ?? MISSIONS[0];
+    net.send({ m: 'mission', id: first.id });
+  } else if (act === 'talents') {
+    showTalents = !showTalents;
+    renderLobby();
+  } else if (act === 'buyTalent') {
+    if (buyTalent(btn.dataset.id as TalentId)) net.send({ m: 'profile', talents: profile.talents });
+    renderLobby();
+  } else if (act === 'resetTalents') {
+    resetTalents();
+    net.send({ m: 'profile', talents: profile.talents });
+    renderLobby();
+  }
   else if (act === 'difficulty') net.send({ m: 'difficulty', level: btn.dataset.id as Difficulty });
   else if (act === 'fullscreen') toggleFullscreen();
   else if (act === 'home') goHome();
 });
 let pendingName = 'Joueur';
+
+/** Partie libre ou mission de campagne (le stratège choisit ; étoiles et verrous viennent de son appareil). */
+function modeCard(): string {
+  const cur = missionById(lobby?.mission);
+  if (role !== 'strategist') return `<div class="card"><b>Mode</b><div class="muted">${cur ? `Campagne · ${cur.name} — ${cur.brief}` : 'Partie libre'}</div></div>`;
+  const list = MISSIONS.map((m) => {
+    const open = missionUnlocked(m.id);
+    const st = profile.stars[m.id] ?? 0;
+    return `<button class="mission ${cur?.id === m.id ? 'on' : ''}" data-act="mission" data-id="${m.id}" ${open ? '' : 'disabled'}>
+      <b>${m.name}</b><span class="stars">${'★'.repeat(st)}${'☆'.repeat(3 - st)}</span><small>${open ? `${m.brief} · ${DIFFICULTIES[m.difficulty].name}` : 'Gagne la mission précédente pour la débloquer.'}</small></button>`;
+  }).join('');
+  return `<div class="card"><b>Mode</b><div class="chips"><button data-act="mission" data-id="" class="${cur ? '' : 'on'}">Partie libre</button><button data-act="campaign" class="${cur ? 'on' : ''}">Campagne</button></div>
+    ${cur || showCampaign ? `<div class="missions">${list}</div>` : ''}</div>`;
+}
+let showCampaign = false;
+
+/** Talents : achetés avec les éclats gagnés en jouant, appliqués à chaque nouvelle partie. */
+function talentsCard(): string {
+  if (!showTalents) return `<div class="card"><div class="row"><b>Talents</b><span class="shards">◆ ${profile.shards} éclats</span><button data-act="talents">Voir</button></div><small>Gagne des éclats à chaque partie pour renforcer durablement ton jeu.</small></div>`;
+  const group = (side: 'strategist' | 'hero', title: string) =>
+    `<div class="section">${title}</div>${(Object.keys(TALENTS) as TalentId[])
+      .filter((id) => TALENTS[id].side === side)
+      .map((id) => {
+        const t = TALENTS[id];
+        const r = rank(profile.talents, id);
+        const cost = nextCost(id);
+        return `<div class="talent"><div><b>${t.name}</b> <span class="pips">${'●'.repeat(r)}${'○'.repeat(t.costs.length - r)}</span><small>${r ? t.desc(r) : t.desc(1)}</small></div>
+          ${cost === null ? '<span class="muted small">max</span>' : `<button class="mini" data-act="buyTalent" data-id="${id}" ${profile.shards < cost ? 'disabled' : ''}>◆ ${cost}</button>`}</div>`;
+      })
+      .join('')}`;
+  return `<div class="card"><div class="row"><b>Talents</b><span class="shards">◆ ${profile.shards} éclats</span><button data-act="talents">Fermer</button></div>
+    <small>Les talents du stratège viennent du joueur stratège, ceux du héros du joueur qui le tient (ou du stratège si l'IA joue).</small>
+    ${group('strategist', 'Stratège')}${group('hero', 'Héros')}
+    <button class="mini" data-act="resetTalents">Réinitialiser (rend tous les éclats)</button></div>`;
+}
+let showTalents = false;
 
 /** Choix de la difficulté : le stratège choisit, les autres voient le niveau retenu. */
 function difficultyChips(): string {
@@ -331,6 +394,7 @@ net.onMessage = (msg: ServerMessage) => {
       net.session = { code: lobby.code, token: msg.token, name: pendingName };
       saveSession(net.session);
       history.replaceState(null, '', `/join/${lobby.code}`);
+      net.send({ m: 'profile', talents: profile.talents });
       renderLobby();
       break;
     case 'lobby':
@@ -494,7 +558,7 @@ function onTap(tap: Tap, x: number, y: number) {
 function renderGame() {
   if (!state || !map || !lobby) return;
   const s = state;
-  const hs = heroStats(s.hero.upgrades);
+  const hs = heroStats(s.hero.upgrades, s.hero.perks);
   const revive = reviveCost(s.wave);
   const heroLine = s.hero.waitingRevive
     ? `<span class="warn">à terre · il faut ${revive}</span>`
@@ -515,7 +579,7 @@ function renderGame() {
   const speedCycle = `<button data-act="speedCycle" class="speed-cycle ${asked > lobby.speed ? 'asked' : ''}" ${role ? '' : 'disabled'}>${speedLabel(lobby.speed)}${pending}</button>`;
   render(
     $('hud'),
-    `${pill('wave', '', `<span class="l">Vague </span><span class="s">V</span><b>${s.wave}</b>`)}
+    `${pill('wave', '', `<span class="l">Vague </span><span class="s">V</span><b>${s.wave}</b>${s.mission ? `<span class="l">/${s.mission.waves}</span>` : ''}`)}
      ${pill('heart', '<i>♥</i>', `<b>${s.baseHp}</b>`)}${pill('scrap', bolt, `<b>${Math.floor(s.scrap)}</b>`)}
      ${pill('hero', `<img src="${ART.hero.url}" alt="" />`, `<span class="l">${s.heroController === 'ai' ? 'IA · ' : ''}</span>${heroLine}`)}
      <span class="grow"></span>${canFullscreen ? `<button data-act="fullscreen" class="fs-btn ${isFullscreen() ? 'on' : ''}" title="${fsLabel()} (touche F)">⛶</button>` : ''}${role ? `<button data-act="pause" class="pause-btn ${lobby.paused ? 'on' : ''}" title="Pause (touche P ou Espace)">${lobby.paused ? '▶' : '❚❚'}</button>` : ''}<span class="speed">${speedBtns}</span>${speedCycle}`,
@@ -679,7 +743,7 @@ function towerPanel(s: GameState, t: TowerState): string {
   if (role === 'hero') {
     const cap = s.phase === 'wave' ? max * G.quickRepairCap : max;
     const missing = Math.max(0, cap - t.hp);
-    const cost = Math.ceil(repairCost(t, missing, heroStats(s.hero.upgrades).repairCostMult));
+    const cost = Math.ceil(repairCost(t, missing, heroStats(s.hero.upgrades, s.hero.perks).repairCostMult));
     html += `<div class="grid">
       <button data-act="task" data-kind="repair" ${missing < 1 ? 'disabled' : ''}>Réparer<small>${missing < 1 ? (t.hp >= max - 1 ? 'En bon état' : 'Maximum en pleine vague') : `environ ${cost} ressources`}</small></button>
       ${ammoMax > 0 ? `<button data-act="task" data-kind="reload" ${t.ammo >= ammoMax ? 'disabled' : ''}>Recharger<small>${Math.ceil(def.cost * G.reloadCostRatio * (1 - t.ammo / ammoMax))} ressources</small></button>` : ''}
@@ -752,8 +816,8 @@ function menuPanel(s: GameState): string {
     ${slots}<div class="chips"><button data-act="share">Inviter un joueur</button>${canFullscreen ? `<button data-act="fullscreen">${fsLabel()}</button>` : ''}</div>
     <div class="section">Partie</div>
     <div class="chips">
-      ${canRestart ? `<div class="section">Difficulté de la prochaine partie</div>${difficultyChips()}` : ''}
-      ${canRestart ? `<button data-act="restart">${confirmLabel('restart', 'Rejouer · nouvelle carte')}</button><button data-act="restartSame">${confirmLabel('restartSame', 'Rejouer · même carte')}</button>` : ''}
+      ${canRestart && !s.mission ? `<div class="section">Difficulté de la prochaine partie</div>${difficultyChips()}` : ''}
+      ${canRestart ? (s.mission ? `<button data-act="restartSame">${confirmLabel('restartSame', 'Rejouer la mission')}</button>` : `<button data-act="restart">${confirmLabel('restart', 'Rejouer · nouvelle carte')}</button><button data-act="restartSame">${confirmLabel('restartSame', 'Rejouer · même carte')}</button>`) : ''}
       <button class="danger" data-act="home">${confirmLabel('home', 'Quitter vers l’accueil')}</button>
     </div>
     <div class="section">Réglages</div>${settingsHtml()}
@@ -795,13 +859,15 @@ const ROLE: Record<TowerTypeId, string> = {
 };
 
 function buildPanel(s: GameState, high: boolean): string {
-  const ids = Object.keys(TOWERS) as TowerTypeId[];
+  const allowed = missionById(s.mission?.id)?.towers;
+  const ids = (Object.keys(TOWERS) as TowerTypeId[]).filter((id) => !allowed || allowed.includes(id));
   const cards = ids
     .map((id) => {
       const d = TOWERS[id];
-      const poor = s.scrap < d.cost;
+      const price = towerPrice(id, s.perks);
+      const poor = s.scrap < price;
       return `<button class="card build ${previewType === id ? 'previewing' : ''} ${poor ? 'poor' : ''}" data-act="build" data-id="${id}">
-        <img src="${towerIcon(id)}" alt="" /><b>${d.name}</b><em>${d.cost}</em><small>${ROLE[id]}</small></button>`;
+        <img src="${towerIcon(id)}" alt="" /><b>${d.name}</b><em>${price}</em><small>${ROLE[id]}</small></button>`;
     })
     .join('');
   let detail = '<div class="detail muted">Survole ou touche une tourelle pour voir sa zone de tir et ses détails.</div>';
@@ -812,11 +878,12 @@ function buildPanel(s: GameState, high: boolean): string {
     if (b.damage > 0) tiles.push(statTile(fmt(b.damage), 'dégâts'), statTile((high ? b.range * 1.2 : b.range).toFixed(1), `portée ${SHAPE_NAME[b.shape]}`), statTile((1 / b.cooldown).toFixed(1), 'tirs / s'));
     else if (b.auraRadius > 0) tiles.push(statTile(fmt(b.auraRadius), 'rayon d’aura'));
     const roots = d.nodes.filter((n) => n.parent === null).map((n) => n.name);
-    const poor = s.scrap < d.cost;
+    const price = towerPrice(previewType, s.perks);
+    const poor = s.scrap < price;
     detail = `<div class="detail"><div class="dhead"><img src="${towerIcon(previewType)}" alt="" /><div><b>${d.name}</b><div class="muted small">${d.desc}</div></div></div>
       <div class="tiles">${tiles.join('')}</div>
       ${roots.length ? `<div class="muted small">Voies d’amélioration : ${roots.join(' · ')} <button class="mini" data-act="tree" data-id="${previewType}">Voir l’arbre</button></div>` : ''}
-      <button class="primary" data-act="build" data-id="${previewType}" ${poor ? 'disabled' : ''}>${poor ? `Il manque ${Math.ceil(d.cost - s.scrap)}` : `Poser · ${d.cost}`}</button></div>`;
+      <button class="primary" data-act="build" data-id="${previewType}" ${poor ? 'disabled' : ''}>${poor ? `Il manque ${Math.ceil(price - s.scrap)}` : `Poser · ${price}`}</button></div>`;
   }
   return `<div class="panel-head"><h3>Construire${high ? ' <span class="muted small">point haut : +20 % de portée</span>' : ''}</h3><button data-act="close">✕</button></div>
     <div class="cards">${cards}</div>${detail}`;
@@ -857,8 +924,9 @@ function trapBuildPanel(s: GameState): string {
   const cards = (Object.keys(TRAPS) as TrapTypeId[])
     .map((id) => {
       const d = TRAPS[id];
-      const poor = s.scrap < d.cost;
-      return `<button class="up" data-act="buildTrap" data-id="${id}" ${poor || !ok ? 'disabled' : ''}><span class="uphead"><b>${d.name}</b><em class="${poor ? 'poor' : ''}">${d.cost}</em></span><small>${d.desc}</small>${poor ? `<small class="need">Il manque ${Math.ceil(d.cost - s.scrap)}</small>` : ''}</button>`;
+      const price = trapPrice(id, s.perks);
+      const poor = s.scrap < price;
+      return `<button class="up" data-act="buildTrap" data-id="${id}" ${poor || !ok ? 'disabled' : ''}><span class="uphead"><b>${d.name}</b><em class="${poor ? 'poor' : ''}">${price}</em></span><small>${d.desc}</small>${poor ? `<small class="need">Il manque ${Math.ceil(price - s.scrap)}</small>` : ''}</button>`;
     })
     .join('');
   return `${head}<div class="hint">Le héros (ou l'IA) va le construire sur place. ${s.traps.length}/${TRAP_CONFIG.maxTraps} pièges.</div><div class="ups">${cards}</div>
@@ -935,13 +1003,24 @@ function summaryHtml(s: GameState): string {
   const best = st.best;
   const bestNames = best ? best.path.map((id) => TOWERS[best.type].nodes.find((n) => n.id === id)?.name ?? id) : [];
   const maxHp = Math.max(G.baseHp, ...st.baseHpByWave);
+  const gain = lobby && map ? award(`${lobby.code}:${map.requestedSeed}:${Math.round(s.time)}`, s) : null;
+  const mission = missionById(s.mission?.id);
   return `<h2>${s.won ? 'Victoire !' : 'La base est tombée'}</h2>
+    ${mission ? `<div class="mission-res"><b>${mission.name}</b><span class="stars big">${'★'.repeat(gain?.stars ?? 0)}${'☆'.repeat(3 - (gain?.stars ?? 0))}</span><small>${s.won ? (gain && gain.stars < 3 ? 'Base intacte pour 3 étoiles.' : 'Mission parfaite !') : `Objectif : ${mission.waves} vagues.`}</small></div>` : ''}
+    ${gain ? `<div class="gain">◆ +${gain.shards} éclats${gain.newStars ? ` (dont ${gain.newStars * 5} pour les étoiles)` : ''} · total ${profile.shards}</div>` : ''}
     <div class="tiles">${statTile(String(waves), waves > 1 ? 'vagues tenues' : 'vague tenue')}${statTile(String(st.kills), 'ennemis éliminés')}${statTile(String(s.bossesKilled), 'boss')}${statTile(duration(s.time), 'durée')}</div>
     ${best ? `<div class="mvp"><img src="${towerIcon(best.type)}" alt="" /><div><small>Meilleure tour</small><b>${TOWERS[best.type].name}</b>${bestNames.length ? `<div class="crumbs">${bestNames.join(' › ')}</div>` : ''}<span class="muted small">${fmt(best.dealt)} dégâts · ${best.kills} éliminations</span></div></div>` : ''}
     <div class="section">Dégâts par source</div>
     <div class="bars">${srcs.map(([k, v]) => `<div class="barrow"><span>${sourceName(k)}</span><i style="width:${Math.max(3, (v.damage / top) * 100).toFixed(0)}%"></i><b>${fmt(v.damage)}</b></div>`).join('') || '<div class="muted">Aucun dégât.</div>'}</div>
     <div class="section">Base</div>${hpCurve([maxHp, ...st.baseHpByWave], maxHp)}
     <div class="muted small">Héros : ${fmt(st.harvested)} ressources rapportées · ${st.towersBuilt} tours construites · ${fmt(st.spent)} dépensées · ${st.leaks} ennemis passés · ${DIFFICULTIES[s.difficulty ?? 'difficile'].name} · seed ${lobby?.seed ?? '?'}</div>`;
+}
+
+function nextMissionBtn(s: GameState): string {
+  if (role !== 'strategist' || !s.won || !s.mission) return '';
+  const i = MISSIONS.findIndex((m) => m.id === s.mission!.id);
+  const next = MISSIONS[i + 1];
+  return next ? `<button class="primary" data-act="nextMission" data-id="${next.id}">Mission suivante : ${next.name}</button>` : '';
 }
 
 function summaryText(s: GameState): string {
@@ -955,7 +1034,7 @@ function renderModal(s: GameState) {
   let html = '';
   if (s.phase === 'over') {
     html = `<div class="box summary">${summaryHtml(s)}
-      <div class="stack"><button data-act="shareSummary">Partager le bilan</button>${role ? `<button class="primary" data-act="restart">Rejouer · nouvelle carte</button><button data-act="restartSame">Rejouer · même carte</button>` : '<p class="muted">Un joueur du salon peut relancer la partie.</p>'}
+      <div class="stack">${nextMissionBtn(s)}<button data-act="shareSummary">Partager le bilan</button>${role ? (s.mission ? `<button data-act="restartSame">Rejouer la mission</button>` : `<button class="primary" data-act="restart">Rejouer · nouvelle carte</button><button data-act="restartSame">Rejouer · même carte</button>`) : '<p class="muted">Un joueur du salon peut relancer la partie.</p>'}
       <button data-act="home">Retour à l’accueil</button></div></div>`;
   } else if (s.rewardChoices && role === 'strategist') {
     html = `<div class="box"><h2>Boss vaincu !</h2><p>Choisis une récompense :</p><div class="grid">${s.rewardChoices
@@ -1041,7 +1120,7 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'build':
       // Sur écran tactile, un premier appui montre la portée ; le second pose la tour.
       if (panel?.kind === 'slot' && ev.pointerType !== 'mouse' && previewType !== id) { previewByTouch = true; setPreview(id as TowerTypeId); break; }
-      if (panel?.kind === 'slot' && state.scrap < TOWERS[id as TowerTypeId].cost) { previewByTouch = ev.pointerType !== 'mouse'; setPreview(id as TowerTypeId); toast(`Il manque ${Math.ceil(TOWERS[id as TowerTypeId].cost - state.scrap)} ressources.`); break; }
+      if (panel?.kind === 'slot' && state.scrap < towerPrice(id as TowerTypeId, state.perks)) { previewByTouch = ev.pointerType !== 'mouse'; setPreview(id as TowerTypeId); toast(`Il manque ${Math.ceil(towerPrice(id as TowerTypeId, state.perks) - state.scrap)} ressources.`); break; }
       if (panel?.kind === 'slot') cmd({ c: 'build', slotId: panel.id, type: id as TowerTypeId });
       return select(null);
     case 'upgrade': cmd({ c: 'upgrade', towerId, nodeId: id }); break;
@@ -1085,6 +1164,10 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'workTrap':
       if (panel?.kind === 'trap') cmd({ c: 'task', task: { kind: 'trap', trapId: panel.id } });
       return select(null);
+    case 'nextMission':
+      net.send({ m: 'mission', id: id as MissionId });
+      net.send({ m: 'restart' });
+      break;
     case 'shareSummary': {
       const text = summaryText(state);
       (navigator.share ? navigator.share({ title: 'Boulon & le Dôme', text }) : navigator.clipboard.writeText(text).then(() => toast('Bilan copié.'))).catch(() => toast(text));

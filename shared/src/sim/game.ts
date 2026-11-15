@@ -28,6 +28,7 @@ import {
 import { MAP_CONFIG } from '../config/map';
 import { RANGE_UPGRADE, rangeUpgradeCost, TOWERS } from '../config/towers';
 import { TRAP_CONFIG, TRAPS, trapDamage } from '../config/traps';
+import { cleanPerks, missionById, MissionId, Perks, rank, towerPrice, trapPrice } from '../config/meta';
 import type { GameMap, Vec2 } from '../map/types';
 import { Rng } from '../rng';
 import { decideHeroTask } from './ai';
@@ -82,6 +83,14 @@ export interface SimSave {
   aiClock: number;
 }
 
+export interface GameOptions {
+  /** Talents du stratège et du héros (progression entre parties). */
+  perks?: Perks;
+  heroPerks?: Perks;
+  /** Mission de campagne : carte, difficulté, objectif et contraintes. */
+  mission?: MissionId | null;
+}
+
 export class Game {
   readonly state: GameState;
   private events: GameEvent[] = [];
@@ -94,7 +103,12 @@ export class Game {
   /** Champs de distance (BFS) vers une case, pour le déplacement du héros. La carte est fixe : cache permanent. */
   private fields = new Map<number, Int16Array>();
 
-  constructor(readonly map: GameMap, difficulty: Difficulty = 'difficile') {
+  constructor(readonly map: GameMap, difficulty: Difficulty = 'difficile', opts: GameOptions = {}) {
+    const mission = missionById(opts.mission);
+    if (mission) difficulty = mission.difficulty;
+    const perks = cleanPerks(opts.perks, 'strategist');
+    const heroPerks = cleanPerks(opts.heroPerks, 'hero');
+    const startBase = (mission?.baseHp ?? G.baseHp) + 2 * rank(perks, 'remparts');
     this.rng = new Rng(map.seed ^ 0x9e3779b9);
     this.mud = new Set(map.mud);
     this.state = {
@@ -103,13 +117,13 @@ export class Game {
       phase: 'prep',
       phaseTimer: G.prepDuration,
       wave: 0,
-      baseHp: G.baseHp,
-      scrap: G.startScrap,
+      baseHp: startBase,
+      scrap: (mission?.startScrap ?? G.startScrap) + 25 * rank(perks, 'tresor'),
       towers: [],
       enemies: [],
       pickups: [],
       traps: [],
-      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: 'idle' }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [] },
+      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: 'idle' }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [], perks: heroPerks },
       deposits: map.deposits.map(() => G.depositStock),
       prospects: map.prospectZones.map(() => 0),
       ai: { repairBudgetPct: 0.3, repairThreshold: 0.6, posture: 'equilibree', allowance: 0, spent: 0, order: null, orderCooldown: 0, message: '' },
@@ -120,9 +134,12 @@ export class Game {
       toSpawn: 0,
       bossesKilled: 0,
       won: false,
-      stats: { bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
+      perks,
+      mission: mission ? { id: mission.id, waves: mission.waves } : null,
+      stats: { baseHpStart: startBase, bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
       difficulty: DIFFICULTIES[difficulty] ? difficulty : 'difficile',
     };
+    this.state.hero.hp = heroStats([], heroPerks).maxHp;
     this.resetAllowance();
   }
 
@@ -228,10 +245,18 @@ export class Game {
 
   private endWave() {
     const s = this.state;
+    if (s.mission && s.wave >= s.mission.waves) {
+      // Objectif de mission atteint.
+      s.stats.baseHpByWave.push(s.baseHp);
+      s.won = true;
+      s.phase = 'over';
+      this.emit({ t: 'over', wave: s.wave });
+      return;
+    }
     s.phase = 'inter';
     s.phaseTimer = G.interDuration;
     s.stats.baseHpByWave.push(s.baseHp);
-    const bonus = waveEndBonus(s.wave);
+    const bonus = Math.round(waveEndBonus(s.wave) * (1 + 0.1 * rank(s.perks, 'prime')));
     s.scrap += bonus;
     this.emit({ t: 'income', amount: bonus, wave: s.wave });
     s.deposits = s.deposits.map((d) => Math.min(G.depositStock, d + G.depositRegenPerWave));
@@ -776,7 +801,7 @@ export class Game {
       return false; // cible inaccessible
     }
     const d = dist(hero.x, hero.y, gx, gy);
-    const stepLen = heroStats(hero.upgrades).speed * dt;
+    const stepLen = heroStats(hero.upgrades, hero.perks).speed * dt;
     if (d <= stepLen) {
       hero.x = gx;
       hero.y = gy;
@@ -805,7 +830,7 @@ export class Game {
   private updateHero(dt: number) {
     const s = this.state;
     const hero = s.hero;
-    const stats = heroStats(hero.upgrades);
+    const stats = heroStats(hero.upgrades, hero.perks);
     const base = this.map.base;
     if (hero.respawnIn > 0) {
       hero.respawnIn -= dt;
@@ -976,7 +1001,7 @@ export class Game {
   private repairStep(t: TowerState, dt: number) {
     const s = this.state;
     const hero = s.hero;
-    const stats = heroStats(hero.upgrades);
+    const stats = heroStats(hero.upgrades, hero.perks);
     const fullMax = baseTowerStats(t).maxHp;
     const max = towerMaxHp(t);
     // Pendant une vague, la réparation est rapide mais partielle.
@@ -1066,11 +1091,14 @@ export class Game {
         const def = TOWERS[cmd.type];
         if (!slot || !def) return 'Emplacement ou tour invalide.';
         if (s.towers.some((t) => t.slotId === slot.id)) return 'Emplacement occupé.';
-        if (!pay(def.cost)) return poor;
+        const allowed = missionById(s.mission?.id)?.towers;
+        if (allowed && !allowed.includes(def.id)) return 'Tourelle interdite dans cette mission.';
+        const price = towerPrice(def.id, s.perks);
+        if (!pay(price)) return poor;
         s.stats.towersBuilt++;
         s.towers.push({
           id: this.nextId++, type: def.id, slotId: slot.id, x: slot.x, y: slot.y, hp: def.base.maxHp, maxHpFactor: 1, path: [], rangeLvl: 0, facing: bestFacing(this.map, def.base, slot.x, slot.y, slot.high),
-          invested: def.cost, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0, focusId: 0, focus: 0, dealt: 0, kills: 0,
+          invested: price, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0, focusId: 0, focus: 0, dealt: 0, kills: 0,
         });
         return null;
       }
@@ -1135,8 +1163,9 @@ export class Game {
         if (!def || !Number.isInteger(cmd.x) || !Number.isInteger(cmd.y)) return 'Piège invalide.';
         if (!this.trapCellOk(cmd.x, cmd.y)) return 'Impossible de poser un piège ici.';
         if (s.traps.length >= TRAP_CONFIG.maxTraps) return `Au plus ${TRAP_CONFIG.maxTraps} pièges.`;
-        if (!pay(def.cost)) return poor;
-        s.traps.push({ id: this.nextId++, type: def.id, x: cmd.x, y: cmd.y, built: 0, hp: 0, maxHp: def.hp, invested: def.cost });
+        const price = trapPrice(def.id, s.perks);
+        if (!pay(price)) return poor;
+        s.traps.push({ id: this.nextId++, type: def.id, x: cmd.x, y: cmd.y, built: 0, hp: 0, maxHp: def.hp, invested: price });
         return null;
       }
       case 'removeTrap': {

@@ -1,5 +1,6 @@
 import { HERO_CONFIG, HERO_NODES, HeroStats } from '../config/game';
 import { MAP_CONFIG } from '../config/map';
+import { rank, type Perks } from '../config/meta';
 import { RANGE_UPGRADE, SYNERGIES, SYNERGY_RANGE, TOWERS, TowerStats, UpgradeNode } from '../config/towers';
 import type { GameMap } from '../map/types';
 import type { TowerState } from './types';
@@ -114,7 +115,7 @@ export function availableUpgrades(tower: Pick<TowerState, 'type' | 'path'>): Upg
   return TOWERS[tower.type].nodes.filter((n) => n.parent === last);
 }
 
-export function heroStats(upgrades: string[]): HeroStats {
+export function heroStats(upgrades: string[], perks?: Perks): HeroStats {
   let stats: HeroStats = {
     maxHp: HERO_CONFIG.maxHp,
     speed: HERO_CONFIG.speed,
@@ -128,6 +129,12 @@ export function heroStats(upgrades: string[]): HeroStats {
   for (const id of upgrades) {
     const node = HERO_NODES.find((n) => n.id === id);
     if (node) stats = { ...stats, ...node.stats };
+  }
+  // Talents du héros (progression entre parties) : multiplicateurs par-dessus l'arbre.
+  if (perks) {
+    stats.maxHp = Math.round(stats.maxHp * (1 + 0.12 * rank(perks, 'endurance')));
+    stats.carryCap = Math.round(stats.carryCap * (1 + 0.15 * rank(perks, 'porteur')));
+    stats.speed *= 1 + 0.06 * rank(perks, 'bottes');
   }
   return stats;
 }

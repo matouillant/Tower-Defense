@@ -4322,6 +4322,40 @@ var TRAP_CONFIG = {
 };
 var trapDamage = (def, wave) => def.damage * (1 + TRAP_CONFIG.damagePerWave * Math.max(0, wave - 1));
 
+// shared/src/config/meta.ts
+var TALENTS = {
+  tresor: { id: "tresor", name: "Tr\xE9sor de guerre", side: "strategist", costs: [4, 8, 14], desc: (r) => `+${25 * r} ressources au d\xE9part` },
+  ingenieur: { id: "ingenieur", name: "Ing\xE9nieur", side: "strategist", costs: [5, 10, 16], desc: (r) => `Tourelles ${4 * r} % moins ch\xE8res` },
+  prime: { id: "prime", name: "Primes de guerre", side: "strategist", costs: [4, 8, 14], desc: (r) => `Prime de fin de vague +${10 * r} %` },
+  remparts: { id: "remparts", name: "Remparts", side: "strategist", costs: [5, 10, 16], desc: (r) => `+${2 * r} PV pour la base` },
+  artificier: { id: "artificier", name: "Artificier", side: "strategist", costs: [3, 6, 10], desc: (r) => `Pi\xE8ges ${10 * r} % moins chers` },
+  endurance: { id: "endurance", name: "Endurance", side: "hero", costs: [4, 8, 14], desc: (r) => `H\xE9ros : +${12 * r} % de PV` },
+  porteur: { id: "porteur", name: "Grand porteur", side: "hero", costs: [4, 8, 14], desc: (r) => `H\xE9ros : +${15 * r} % de charge` },
+  bottes: { id: "bottes", name: "Bottes \xE0 r\xE9action", side: "hero", costs: [5, 10, 16], desc: (r) => `H\xE9ros : +${6 * r} % de vitesse` }
+};
+var rank = (p, id) => Math.max(0, Math.min(TALENTS[id].costs.length, Math.floor(p?.[id] ?? 0)));
+function cleanPerks(p, side) {
+  const out = {};
+  if (!p || typeof p !== "object") return out;
+  for (const id of Object.keys(TALENTS)) {
+    if (TALENTS[id].side !== side) continue;
+    const r = rank(p, id);
+    if (r > 0) out[id] = r;
+  }
+  return out;
+}
+var towerPrice = (id, p) => Math.round(TOWERS[id].cost * (1 - 0.04 * rank(p, "ingenieur")));
+var trapPrice = (id, p) => Math.round(TRAPS[id].cost * (1 - 0.1 * rank(p, "artificier")));
+var MISSIONS = [
+  { id: "premier-contact", name: "1 \xB7 Premier contact", brief: "Tenir 5 vagues pour prendre ses marques.", seed: 1101, difficulty: "normal", waves: 5 },
+  { id: "penurie", name: "2 \xB7 P\xE9nurie", brief: "Tenir 7 vagues en partant presque sans rien.", seed: 2207, difficulty: "difficile", waves: 7, startScrap: 90 },
+  { id: "sans-filet", name: "3 \xB7 Sans filet", brief: "Tenir 8 vagues : la base ne supporte que 5 fuites.", seed: 3313, difficulty: "difficile", waves: 8, baseHp: 5 },
+  { id: "artisans", name: "4 \xB7 Artisans", brief: "Tenir 8 vagues avec les seules tourelles de base\u2026 et des pi\xE8ges.", seed: 4421, difficulty: "difficile", waves: 8, towers: ["canon", "givre", "baliste", "depot"] },
+  { id: "maree", name: "5 \xB7 La mar\xE9e", brief: "Tenir 10 vagues, deux boss compris.", seed: 5531, difficulty: "difficile", waves: 10 },
+  { id: "epreuve", name: "6 \xB7 L\u2019\xE9preuve", brief: "Tenir 12 vagues en Cauchemar.", seed: 6643, difficulty: "cauchemar", waves: 12 }
+];
+var missionById = (id) => MISSIONS.find((m) => m.id === id) ?? null;
+
 // shared/src/config/enemies.ts
 var ENEMIES = {
   grunt: { id: "grunt", name: "Fantassin", desc: "Le soldat de base.", hp: 48, shield: 0, speed: 1.15, attack: 5, attackRange: 1.6, attackCooldown: 1.2, bounty: 5, cost: 2, fromWave: 1, leak: 1, size: 0.82, weight: 3 },
@@ -4566,7 +4600,7 @@ function effectiveTowerStats(tower, towers, map) {
 }
 var AURA_CAP = { damage: 0.7, rate: 0.4, reach: 1.2 };
 var towerMaxHp = (tower) => baseTowerStats(tower).maxHp * tower.maxHpFactor;
-function heroStats(upgrades) {
+function heroStats(upgrades, perks) {
   let stats = {
     maxHp: HERO_CONFIG.maxHp,
     speed: HERO_CONFIG.speed,
@@ -4580,6 +4614,11 @@ function heroStats(upgrades) {
   for (const id of upgrades) {
     const node = HERO_NODES.find((n) => n.id === id);
     if (node) stats = { ...stats, ...node.stats };
+  }
+  if (perks) {
+    stats.maxHp = Math.round(stats.maxHp * (1 + 0.12 * rank(perks, "endurance")));
+    stats.carryCap = Math.round(stats.carryCap * (1 + 0.15 * rank(perks, "porteur")));
+    stats.speed *= 1 + 0.06 * rank(perks, "bottes");
   }
   return stats;
 }
@@ -4596,7 +4635,7 @@ function decideHeroTask(game) {
   const s = game.state;
   const hero = s.hero;
   if (hero.respawnIn > 0) return null;
-  const stats = heroStats(hero.upgrades);
+  const stats = heroStats(hero.upgrades, hero.perks);
   const posture = POSTURES[s.ai.posture];
   const inWave = s.phase === "wave";
   const enemyNear = (x, y, r) => r > 0 && s.enemies.some((e) => dist(e.x, e.y, x, y) <= r);
@@ -4725,8 +4764,13 @@ function salvageValue(tower, ratio) {
   return Math.floor(tower.invested * ratio * (0.4 + 0.6 * frac));
 }
 var Game = class _Game {
-  constructor(map, difficulty = "difficile") {
+  constructor(map, difficulty = "difficile", opts = {}) {
     this.map = map;
+    const mission = missionById(opts.mission);
+    if (mission) difficulty = mission.difficulty;
+    const perks = cleanPerks(opts.perks, "strategist");
+    const heroPerks = cleanPerks(opts.heroPerks, "hero");
+    const startBase = (mission?.baseHp ?? GAME_CONFIG.baseHp) + 2 * rank(perks, "remparts");
     this.rng = new Rng(map.seed ^ 2654435769);
     this.mud = new Set(map.mud);
     this.state = {
@@ -4735,13 +4779,13 @@ var Game = class _Game {
       phase: "prep",
       phaseTimer: GAME_CONFIG.prepDuration,
       wave: 0,
-      baseHp: GAME_CONFIG.baseHp,
-      scrap: GAME_CONFIG.startScrap,
+      baseHp: startBase,
+      scrap: (mission?.startScrap ?? GAME_CONFIG.startScrap) + 25 * rank(perks, "tresor"),
       towers: [],
       enemies: [],
       pickups: [],
       traps: [],
-      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: "idle" }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [] },
+      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: "idle" }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [], perks: heroPerks },
       deposits: map.deposits.map(() => GAME_CONFIG.depositStock),
       prospects: map.prospectZones.map(() => 0),
       ai: { repairBudgetPct: 0.3, repairThreshold: 0.6, posture: "equilibree", allowance: 0, spent: 0, order: null, orderCooldown: 0, message: "" },
@@ -4752,9 +4796,12 @@ var Game = class _Game {
       toSpawn: 0,
       bossesKilled: 0,
       won: false,
-      stats: { bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
+      perks,
+      mission: mission ? { id: mission.id, waves: mission.waves } : null,
+      stats: { baseHpStart: startBase, bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
       difficulty: DIFFICULTIES[difficulty] ? difficulty : "difficile"
     };
+    this.state.hero.hp = heroStats([], heroPerks).maxHp;
     this.resetAllowance();
   }
   state;
@@ -4855,10 +4902,17 @@ var Game = class _Game {
   }
   endWave() {
     const s = this.state;
+    if (s.mission && s.wave >= s.mission.waves) {
+      s.stats.baseHpByWave.push(s.baseHp);
+      s.won = true;
+      s.phase = "over";
+      this.emit({ t: "over", wave: s.wave });
+      return;
+    }
     s.phase = "inter";
     s.phaseTimer = GAME_CONFIG.interDuration;
     s.stats.baseHpByWave.push(s.baseHp);
-    const bonus = waveEndBonus(s.wave);
+    const bonus = Math.round(waveEndBonus(s.wave) * (1 + 0.1 * rank(s.perks, "prime")));
     s.scrap += bonus;
     this.emit({ t: "income", amount: bonus, wave: s.wave });
     s.deposits = s.deposits.map((d) => Math.min(GAME_CONFIG.depositStock, d + GAME_CONFIG.depositRegenPerWave));
@@ -5359,7 +5413,7 @@ var Game = class _Game {
       return false;
     }
     const d = dist(hero.x, hero.y, gx, gy);
-    const stepLen = heroStats(hero.upgrades).speed * dt;
+    const stepLen = heroStats(hero.upgrades, hero.perks).speed * dt;
     if (d <= stepLen) {
       hero.x = gx;
       hero.y = gy;
@@ -5386,7 +5440,7 @@ var Game = class _Game {
   updateHero(dt) {
     const s = this.state;
     const hero = s.hero;
-    const stats = heroStats(hero.upgrades);
+    const stats = heroStats(hero.upgrades, hero.perks);
     const base2 = this.map.base;
     if (hero.respawnIn > 0) {
       hero.respawnIn -= dt;
@@ -5548,7 +5602,7 @@ var Game = class _Game {
   repairStep(t, dt) {
     const s = this.state;
     const hero = s.hero;
-    const stats = heroStats(hero.upgrades);
+    const stats = heroStats(hero.upgrades, hero.perks);
     const fullMax = baseTowerStats(t).maxHp;
     const max = towerMaxHp(t);
     const cap = s.phase === "wave" ? max * GAME_CONFIG.quickRepairCap : max;
@@ -5633,7 +5687,10 @@ var Game = class _Game {
         const def = TOWERS[cmd.type];
         if (!slot || !def) return "Emplacement ou tour invalide.";
         if (s.towers.some((t) => t.slotId === slot.id)) return "Emplacement occup\xE9.";
-        if (!pay(def.cost)) return poor;
+        const allowed = missionById(s.mission?.id)?.towers;
+        if (allowed && !allowed.includes(def.id)) return "Tourelle interdite dans cette mission.";
+        const price = towerPrice(def.id, s.perks);
+        if (!pay(price)) return poor;
         s.stats.towersBuilt++;
         s.towers.push({
           id: this.nextId++,
@@ -5646,7 +5703,7 @@ var Game = class _Game {
           path: [],
           rangeLvl: 0,
           facing: bestFacing(this.map, def.base, slot.x, slot.y, slot.high),
-          invested: def.cost,
+          invested: price,
           cooldown: 0,
           ammo: def.base.ammo || -1,
           targeting: "first",
@@ -5721,8 +5778,9 @@ var Game = class _Game {
         if (!def || !Number.isInteger(cmd.x) || !Number.isInteger(cmd.y)) return "Pi\xE8ge invalide.";
         if (!this.trapCellOk(cmd.x, cmd.y)) return "Impossible de poser un pi\xE8ge ici.";
         if (s.traps.length >= TRAP_CONFIG.maxTraps) return `Au plus ${TRAP_CONFIG.maxTraps} pi\xE8ges.`;
-        if (!pay(def.cost)) return poor;
-        s.traps.push({ id: this.nextId++, type: def.id, x: cmd.x, y: cmd.y, built: 0, hp: 0, maxHp: def.hp, invested: def.cost });
+        const price = trapPrice(def.id, s.perks);
+        if (!pay(price)) return poor;
+        s.traps.push({ id: this.nextId++, type: def.id, x: cmd.x, y: cmd.y, built: 0, hp: 0, maxHp: def.hp, invested: price });
         return null;
       }
       case "removeTrap": {
@@ -5855,6 +5913,8 @@ var Room = class {
   /** Joueur qui a mis la partie en pause (null = elle tourne). */
   pausedBy = null;
   difficulty = "difficile";
+  /** Mission de campagne choisie (null = partie libre). */
+  mission = null;
   emptySince = 0;
   get connected() {
     return [...this.clients.values()].filter((c) => c.socket);
@@ -5879,7 +5939,8 @@ var Room = class {
       paused: this.pausedBy,
       slots: ROLES.map((role) => ({ role, ...this.slotStatus(role) })),
       spectators: this.connected.filter((c) => !c.role).length,
-      difficulty: this.difficulty
+      difficulty: this.difficulty,
+      mission: this.mission
     };
   }
   send(client, msg) {
@@ -5904,6 +5965,7 @@ var Room = class {
   restoreGame(state, sim, paused, by) {
     this.game = Game.restore(this.map, state, sim);
     if (state.difficulty in DIFFICULTIES) this.difficulty = state.difficulty;
+    this.mission = missionById(state.mission?.id)?.id ?? null;
     this.pausedBy = paused ? by : null;
     this.pending = 0;
   }
@@ -5986,6 +6048,17 @@ var Room = class {
         this.sendState();
         return;
       }
+      case "profile": {
+        client.talents = { ...cleanPerks(msg.talents, "strategist"), ...cleanPerks(msg.talents, "hero") };
+        return;
+      }
+      case "mission": {
+        if (client.role !== "strategist") return;
+        this.mission = missionById(msg.id)?.id ?? null;
+        if (this.mission && !this.game) this.map = generateMap(missionById(this.mission).seed);
+        this.broadcastLobby();
+        return;
+      }
       case "difficulty": {
         if (client.role !== "strategist" || !(msg.level in DIFFICULTIES)) return;
         this.difficulty = msg.level;
@@ -6002,7 +6075,7 @@ var Room = class {
         if (!this.game || !client.role) return;
         const over = this.game.state.phase === "over";
         if (!over && client.role !== "strategist") return this.send(client, { m: "error", text: "Seul le strat\xE8ge peut relancer une partie en cours." });
-        this.map = generateMap(msg.sameMap ? this.map.requestedSeed : (0, import_node_crypto.randomInt)(2 ** 32));
+        if (!this.mission) this.map = generateMap(msg.sameMap ? this.map.requestedSeed : (0, import_node_crypto.randomInt)(2 ** 32));
         this.begin();
         return;
       }
@@ -6028,7 +6101,15 @@ var Room = class {
   }
   /** Démarre (ou redémarre) la partie avec la carte du salon, pour tous les joueurs connectés. */
   begin() {
-    this.game = new Game(this.map, this.difficulty);
+    const mission = missionById(this.mission);
+    if (mission && this.map.requestedSeed !== mission.seed) this.map = generateMap(mission.seed);
+    const strat = this.slots.strategist ? this.clients.get(this.slots.strategist) : void 0;
+    const heroHuman = this.slots.hero ? this.clients.get(this.slots.hero) : void 0;
+    this.game = new Game(this.map, this.difficulty, {
+      perks: strat?.talents,
+      heroPerks: heroHuman ? heroHuman.talents : strat?.talents,
+      mission: mission?.id ?? null
+    });
     this.pausedBy = null;
     this.pending = 0;
     this.syncHeroController();
