@@ -105,9 +105,30 @@ export const waveBudget = (wave: number, cfg = WAVE_CONFIG) =>
 export type Difficulty = 'normal' | 'difficile' | 'cauchemar';
 export const DIFFICULTIES: Record<Difficulty, { name: string; desc: string; budget: number; hp: number; hpPerWave: number }> = {
   normal: { name: 'Normal', desc: 'Pour découvrir le jeu.', budget: 0.75, hp: 0.85, hpPerWave: 1 },
-  difficile: { name: 'Difficile', desc: 'Vagues nombreuses et coriaces : il faut une vraie stratégie.', budget: 1, hp: 1, hpPerWave: 1.01 },
-  cauchemar: { name: 'Cauchemar', desc: 'Pour les stratèges aguerris : chaque erreur coûte cher.', budget: 1.3, hp: 1.25, hpPerWave: 1.03 },
+  difficile: { name: 'Difficile', desc: 'Vagues nombreuses et coriaces : il faut une vraie stratégie.', budget: 1.15, hp: 1.1, hpPerWave: 1.015 },
+  cauchemar: { name: 'Cauchemar', desc: 'Pour les stratèges aguerris : chaque erreur coûte cher.', budget: 1.45, hp: 1.35, hpPerWave: 1.035 },
 };
+/**
+ * Directeur de menace : après chaque vague, il regarde jusqu'où les ennemis sont allés et ce qui a fui.
+ * Une défense qui ne laisse rien approcher voit les vagues suivantes grossir ; une défense débordée respire un peu.
+ * La menace ne descend jamais sous le plancher du niveau choisi.
+ */
+export const THREAT = {
+  /** Hausse quand aucun ennemi n'a dépassé `easyReach` du chemin, puis `okReach`. */
+  easyReach: 0.6,
+  okReach: 0.85,
+  upEasy: { normal: 1.08, difficile: 1.14, cauchemar: 1.18 } as Record<Difficulty, number>,
+  upOk: { normal: 1.03, difficile: 1.06, cauchemar: 1.09 } as Record<Difficulty, number>,
+  /** Baisse par point de PV perdu par la base pendant la vague. */
+  downPerLeak: 0.035,
+  downMax: 0.25,
+  floor: { normal: 0.85, difficile: 1, cauchemar: 1.1 } as Record<Difficulty, number>,
+  max: 6,
+  /** Part de la menace appliquée au nombre d'ennemis (le reste va aux PV). */
+  budgetShare: 0.5,
+  hpShare: 0.65,
+};
+
 export const difficultyHp = (d: Difficulty, wave: number) => DIFFICULTIES[d].hp * Math.pow(DIFFICULTIES[d].hpPerWave, Math.max(0, wave - 1));
 
 export const isBossWave = (wave: number, cfg = WAVE_CONFIG) => wave > 0 && wave % cfg.bossEvery === 0;

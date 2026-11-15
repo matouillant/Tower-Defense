@@ -4410,8 +4410,23 @@ var bountyMultiplier = (wave, cfg = WAVE_CONFIG) => Math.min(cfg.bountyMaxMult, 
 var waveBudget = (wave, cfg = WAVE_CONFIG) => cfg.baseBudget * Math.pow(cfg.budgetGrowth, wave - 1);
 var DIFFICULTIES = {
   normal: { name: "Normal", desc: "Pour d\xE9couvrir le jeu.", budget: 0.75, hp: 0.85, hpPerWave: 1 },
-  difficile: { name: "Difficile", desc: "Vagues nombreuses et coriaces : il faut une vraie strat\xE9gie.", budget: 1, hp: 1, hpPerWave: 1.01 },
-  cauchemar: { name: "Cauchemar", desc: "Pour les strat\xE8ges aguerris : chaque erreur co\xFBte cher.", budget: 1.3, hp: 1.25, hpPerWave: 1.03 }
+  difficile: { name: "Difficile", desc: "Vagues nombreuses et coriaces : il faut une vraie strat\xE9gie.", budget: 1.15, hp: 1.1, hpPerWave: 1.015 },
+  cauchemar: { name: "Cauchemar", desc: "Pour les strat\xE8ges aguerris : chaque erreur co\xFBte cher.", budget: 1.45, hp: 1.35, hpPerWave: 1.035 }
+};
+var THREAT = {
+  /** Hausse quand aucun ennemi n'a dépassé `easyReach` du chemin, puis `okReach`. */
+  easyReach: 0.6,
+  okReach: 0.85,
+  upEasy: { normal: 1.08, difficile: 1.14, cauchemar: 1.18 },
+  upOk: { normal: 1.03, difficile: 1.06, cauchemar: 1.09 },
+  /** Baisse par point de PV perdu par la base pendant la vague. */
+  downPerLeak: 0.035,
+  downMax: 0.25,
+  floor: { normal: 0.85, difficile: 1, cauchemar: 1.1 },
+  max: 6,
+  /** Part de la menace appliquée au nombre d'ennemis (le reste va aux PV). */
+  budgetShare: 0.5,
+  hpShare: 0.65
 };
 var difficultyHp = (d, wave) => DIFFICULTIES[d].hp * Math.pow(DIFFICULTIES[d].hpPerWave, Math.max(0, wave - 1));
 var isBossWave = (wave, cfg = WAVE_CONFIG) => wave > 0 && wave % cfg.bossEvery === 0;
@@ -4797,11 +4812,15 @@ var Game = class _Game {
       bossesKilled: 0,
       won: false,
       perks,
+      threat: 1,
+      waveReach: 0,
+      waveLeaked: 0,
       mission: mission ? { id: mission.id, waves: mission.waves } : null,
-      stats: { baseHpStart: startBase, bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
+      stats: { maxThreat: 1, baseHpStart: startBase, bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
       difficulty: DIFFICULTIES[difficulty] ? difficulty : "difficile"
     };
     this.state.hero.hp = heroStats([], heroPerks).maxHp;
+    this.state.threat = THREAT.floor[this.state.difficulty];
     this.resetAllowance();
   }
   state;
@@ -4893,6 +4912,8 @@ var Game = class _Game {
     if (s.rewardChoices) this.applyReward(s.rewardChoices[0]);
     s.wave++;
     s.phase = "wave";
+    s.waveReach = 0;
+    s.waveLeaked = 0;
     s.phaseTimer = 0;
     this.waveClock = 0;
     this.spawnQueue = this.buildWave(s.wave);
@@ -4900,8 +4921,20 @@ var Game = class _Game {
     this.resetAllowance();
     this.emit({ t: "wave", wave: s.wave, boss: isBossWave(s.wave) });
   }
+  /** Directeur de menace : ajuste la vague suivante selon la tenue de la défense. */
+  adjustThreat() {
+    const s = this.state;
+    const d = s.difficulty ?? "difficile";
+    let k = s.threat ?? 1;
+    if ((s.waveLeaked ?? 0) > 0) k *= 1 - Math.min(THREAT.downMax, THREAT.downPerLeak * s.waveLeaked);
+    else if ((s.waveReach ?? 0) < THREAT.easyReach) k *= THREAT.upEasy[d];
+    else if ((s.waveReach ?? 0) < THREAT.okReach) k *= THREAT.upOk[d];
+    s.threat = Math.max(THREAT.floor[d], Math.min(THREAT.max, k));
+    s.stats.maxThreat = Math.max(s.stats.maxThreat ?? 1, s.threat);
+  }
   endWave() {
     const s = this.state;
+    this.adjustThreat();
     if (s.mission && s.wave >= s.mission.waves) {
       s.stats.baseHpByWave.push(s.baseHp);
       s.won = true;
@@ -4926,7 +4959,8 @@ var Game = class _Game {
   buildWave(wave) {
     const cfg = WAVE_CONFIG;
     const boss = isBossWave(wave);
-    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1) * DIFFICULTIES[this.state.difficulty ?? "difficile"].budget;
+    const threat = this.state.threat ?? 1;
+    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1) * DIFFICULTIES[this.state.difficulty ?? "difficile"].budget * Math.pow(threat, THREAT.budgetShare);
     const pool = Object.values(ENEMIES).filter((e) => !e.boss && e.fromWave <= wave);
     const minCost = Math.min(...pool.map((e) => e.cost));
     const picks = [];
@@ -4939,7 +4973,7 @@ var Game = class _Game {
     }
     const spent = total - budget;
     const overflow = spent > 0 ? total / spent : 1;
-    const hpMult = hpMultiplier(wave) * overflow * difficultyHp(this.state.difficulty ?? "difficile", wave);
+    const hpMult = hpMultiplier(wave) * overflow * difficultyHp(this.state.difficulty ?? "difficile", wave) * Math.pow(threat, THREAT.hpShare);
     const interval = Math.max(cfg.minSpawnInterval, cfg.spawnWindow / Math.max(1, picks.length));
     const queue = picks.map((type, i) => ({
       type,
@@ -4953,7 +4987,7 @@ var Game = class _Game {
         type: BOSS_POOL[(n - 1) % BOSS_POOL.length],
         pathIdx: this.rng.int(0, this.map.paths.length - 1),
         at: 3,
-        hpMult: Math.pow(cfg.bossHpGrowth, n - 1) * DIFFICULTIES[this.state.difficulty ?? "difficile"].hp
+        hpMult: Math.pow(cfg.bossHpGrowth, n - 1) * DIFFICULTIES[this.state.difficulty ?? "difficile"].hp * Math.pow(threat, THREAT.hpShare)
       });
       queue.sort((a, b) => a.at - b.at);
     }
@@ -5034,8 +5068,10 @@ var Game = class _Game {
           blockedBy = wall.trap;
         } else e.d += speed * dt;
         const path = this.map.paths[e.pathIdx];
+        if (!def.boss) s.waveReach = Math.max(s.waveReach ?? 0, e.d / (path.length - 1));
         if (e.d >= path.length - 1) {
           s.baseHp -= def.leak;
+          s.waveLeaked = (s.waveLeaked ?? 0) + def.leak;
           s.stats.leaks++;
           e.hp = 0;
           e.bounty = 0;

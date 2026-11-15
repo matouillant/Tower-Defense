@@ -353,3 +353,13 @@ button.mission.on { border-color: var(--neon); box-shadow: 0 0 0 2px var(--neon)
 .talent { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #ffffff14; }
 .talent small { display: block; color: var(--muted); }
 button.mission.on { background: #12304a; color: #fff; }
+
+#hud .pill.threat i { color: #b58cff; font-style: normal; }
+#hud .pill.threat.warm { border-color: #ff9d3c; } #hud .pill.threat.warm i { color: #ff9d3c; }
+#hud .pill.threat.hot { border-color: #ff4d6d; box-shadow: 0 0 10px #ff4d6d66; } #hud .pill.threat.hot i { color: #ff4d6d; }
+@media (max-width: 520px) { #hud .pill.threat .l { display: none; } }
+@media (max-width: 430px) {
+  #hud { gap: 4px; }
+  #hud .pill { padding-left: 6px; padding-right: 6px; gap: 3px; }
+  #hud .pill.threat i { font-size: 15px; }
+}

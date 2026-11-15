@@ -15,6 +15,7 @@ Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur e
 - **Pièges** : barricade, mine et pieux posés sur le chemin par le stratège, construits, réparés et réarmés par le héros (ou l'IA).
 - **Bilan de fin de partie** : meilleure tour, dégâts par source, courbe des PV de la base, partage.
 - **Son et musique** synthétisés dans le navigateur (aucun fichier), musique qui suit l'intensité de la partie ; effets visuels (éclat, particules, chiffres de dégâts, tremblements) réglables dans le menu.
+- **Directeur de menace** : tant que la défense ne laisse rien approcher, les vagues suivantes grossissent (affiché « ☠ ×1,4 » dans le bandeau) ; quand la base encaisse, la pression redescend, jamais sous le plancher du niveau choisi.
 - **3 niveaux de difficulté** (Normal, Difficile par défaut, Cauchemar), choisis par le stratège dans le salon ou pour la partie suivante.
 - **Prime de fin de vague** croissante ; la partie se met en pause dès qu'on quitte l'onglet ou la fenêtre.
 - **Dépôt avancé** : bâtiment où le héros décharge ses ressources sans retourner à la base.

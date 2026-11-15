@@ -408,6 +408,7 @@ net.onMessage = (msg: ServerMessage) => {
       map = msg.map;
       // Nouvelle partie (première, ou relancée dans le même salon) : on repart d'un affichage vierge.
       state = null;
+      lastThreat = 0;
       panel = null;
       movingTower = null;
       aiPanelOpen = false;
@@ -434,6 +435,7 @@ net.onMessage = (msg: ServerMessage) => {
       scene?.pushState(msg.state, msg.events);
       for (const e of msg.events) onEvent(e);
       soundState(msg.state);
+      announceThreat(msg.state);
       renderGame();
       break;
     case 'error':
@@ -472,6 +474,16 @@ function soundOf(e: GameEvent) {
     case 'ability': audio.play(e.id === 'foudre' ? 'thunder' : e.id === 'ralentir' ? 'slowField' : 'upgrade'); break;
     case 'over': audio.play('over'); break;
   }
+}
+
+let lastThreat = 0;
+/** Le directeur de menace a réagi : on le dit au joueur, sobrement. */
+function announceThreat(s: GameState) {
+  const k = s.threat ?? 1;
+  if (lastThreat && Math.abs(k - lastThreat) > 0.005 && s.phase !== 'over') {
+    toast(k > lastThreat ? `Défense solide : la menace monte (×${k.toFixed(2)})` : `La base souffre : la menace se calme (×${k.toFixed(2)})`, 'info');
+  }
+  lastThreat = k;
 }
 
 let lastBaseHpSound = -1;
@@ -580,6 +592,7 @@ function renderGame() {
   render(
     $('hud'),
     `${pill('wave', '', `<span class="l">Vague </span><span class="s">V</span><b>${s.wave}</b>${s.mission ? `<span class="l">/${s.mission.waves}</span>` : ''}`)}
+     ${pill(`threat ${(s.threat ?? 1) >= 2 ? 'hot' : (s.threat ?? 1) >= 1.3 ? 'warm' : ''}`, '<i>☠</i>', `<span class="l">Menace </span><b>×${(s.threat ?? 1).toFixed(1)}</b>`)}
      ${pill('heart', '<i>♥</i>', `<b>${s.baseHp}</b>`)}${pill('scrap', bolt, `<b>${Math.floor(s.scrap)}</b>`)}
      ${pill('hero', `<img src="${ART.hero.url}" alt="" />`, `<span class="l">${s.heroController === 'ai' ? 'IA · ' : ''}</span>${heroLine}`)}
      <span class="grow"></span>${canFullscreen ? `<button data-act="fullscreen" class="fs-btn ${isFullscreen() ? 'on' : ''}" title="${fsLabel()} (touche F)">⛶</button>` : ''}${role ? `<button data-act="pause" class="pause-btn ${lobby.paused ? 'on' : ''}" title="Pause (touche P ou Espace)">${lobby.paused ? '▶' : '❚❚'}</button>` : ''}<span class="speed">${speedBtns}</span>${speedCycle}`,
@@ -1013,7 +1026,7 @@ function summaryHtml(s: GameState): string {
     <div class="section">Dégâts par source</div>
     <div class="bars">${srcs.map(([k, v]) => `<div class="barrow"><span>${sourceName(k)}</span><i style="width:${Math.max(3, (v.damage / top) * 100).toFixed(0)}%"></i><b>${fmt(v.damage)}</b></div>`).join('') || '<div class="muted">Aucun dégât.</div>'}</div>
     <div class="section">Base</div>${hpCurve([maxHp, ...st.baseHpByWave], maxHp)}
-    <div class="muted small">Héros : ${fmt(st.harvested)} ressources rapportées · ${st.towersBuilt} tours construites · ${fmt(st.spent)} dépensées · ${st.leaks} ennemis passés · ${DIFFICULTIES[s.difficulty ?? 'difficile'].name} · seed ${lobby?.seed ?? '?'}</div>`;
+    <div class="muted small">Héros : ${fmt(st.harvested)} ressources rapportées · ${st.towersBuilt} tours construites · ${fmt(st.spent)} dépensées · ${st.leaks} ennemis passés · menace max ×${(st.maxThreat ?? 1).toFixed(2)} · ${DIFFICULTIES[s.difficulty ?? 'difficile'].name} · seed ${lobby?.seed ?? '?'}</div>`;
 }
 
 function nextMissionBtn(s: GameState): string {

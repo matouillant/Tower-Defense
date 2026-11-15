@@ -595,3 +595,26 @@ describe('progression et campagne', () => {
     expect(missionStars(true, 1, 15)).toBe(1);
   });
 });
+
+describe('directeur de menace', () => {
+  it('monte quand rien n’approche, baisse quand la base encaisse, jamais sous le plancher', () => {
+    const g = new Game(generateMap(3), 'difficile');
+    const s = g.state;
+    expect(s.threat).toBe(1);
+    s.waveReach = 0.3;
+    s.waveLeaked = 0;
+    (g as any).adjustThreat();
+    expect(s.threat).toBeCloseTo(1.14, 5);
+    s.waveReach = 0.7;
+    (g as any).adjustThreat();
+    expect(s.threat).toBeCloseTo(1.14 * 1.06, 5);
+    s.waveLeaked = 4;
+    (g as any).adjustThreat();
+    expect(s.threat).toBeCloseTo(1.14 * 1.06 * (1 - 0.14), 5);
+    s.waveLeaked = 20;
+    (g as any).adjustThreat();
+    (g as any).adjustThreat();
+    expect(s.threat).toBe(1);
+    expect(s.stats.maxThreat).toBeGreaterThan(1.2);
+  });
+});

@@ -175,6 +175,11 @@ export interface GameState {
   won: boolean;
   /** Talents du stratège appliqués à la partie. */
   perks: Perks;
+  /** Directeur de menace : multiplicateur appliqué aux vagues suivantes (voir THREAT). */
+  threat: number;
+  /** Pendant la vague : progression maximale atteinte par un ennemi (0..1) et PV perdus par la base. */
+  waveReach: number;
+  waveLeaked: number;
   /** Mission de campagne en cours (null en partie libre). */
   mission: { id: MissionId; waves: number } | null;
 }
@@ -182,6 +187,8 @@ export interface GameState {
 /** Statistiques de la partie, pour le bilan de fin. */
 export interface GameStats {
   baseHpStart: number;
+  /** Menace la plus haute atteinte. */
+  maxThreat: number;
   /** Dégâts et ennemis achevés, par source : type de tourelle, « hero », « competence », « piege ». */
   bySource: Record<string, { damage: number; kills: number }>;
   kills: number;

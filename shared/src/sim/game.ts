@@ -11,6 +11,7 @@ import {
   DIFFICULTIES,
   Difficulty,
   difficultyHp,
+  THREAT,
 } from '../config/enemies';
 import {
   ABILITIES,
@@ -135,11 +136,15 @@ export class Game {
       bossesKilled: 0,
       won: false,
       perks,
+      threat: 1,
+      waveReach: 0,
+      waveLeaked: 0,
       mission: mission ? { id: mission.id, waves: mission.waves } : null,
-      stats: { baseHpStart: startBase, bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
+      stats: { maxThreat: 1, baseHpStart: startBase, bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
       difficulty: DIFFICULTIES[difficulty] ? difficulty : 'difficile',
     };
     this.state.hero.hp = heroStats([], heroPerks).maxHp;
+    this.state.threat = THREAT.floor[this.state.difficulty];
     this.resetAllowance();
   }
 
@@ -235,6 +240,8 @@ export class Game {
     if (s.rewardChoices) this.applyReward(s.rewardChoices[0]);
     s.wave++;
     s.phase = 'wave';
+    s.waveReach = 0;
+    s.waveLeaked = 0;
     s.phaseTimer = 0;
     this.waveClock = 0;
     this.spawnQueue = this.buildWave(s.wave);
@@ -243,8 +250,21 @@ export class Game {
     this.emit({ t: 'wave', wave: s.wave, boss: isBossWave(s.wave) });
   }
 
+  /** Directeur de menace : ajuste la vague suivante selon la tenue de la défense. */
+  private adjustThreat() {
+    const s = this.state;
+    const d = s.difficulty ?? 'difficile';
+    let k = s.threat ?? 1;
+    if ((s.waveLeaked ?? 0) > 0) k *= 1 - Math.min(THREAT.downMax, THREAT.downPerLeak * s.waveLeaked);
+    else if ((s.waveReach ?? 0) < THREAT.easyReach) k *= THREAT.upEasy[d];
+    else if ((s.waveReach ?? 0) < THREAT.okReach) k *= THREAT.upOk[d];
+    s.threat = Math.max(THREAT.floor[d], Math.min(THREAT.max, k));
+    s.stats.maxThreat = Math.max(s.stats.maxThreat ?? 1, s.threat);
+  }
+
   private endWave() {
     const s = this.state;
+    this.adjustThreat();
     if (s.mission && s.wave >= s.mission.waves) {
       // Objectif de mission atteint.
       s.stats.baseHpByWave.push(s.baseHp);
@@ -271,7 +291,8 @@ export class Game {
   private buildWave(wave: number): SpawnEntry[] {
     const cfg = WAVE_CONFIG;
     const boss = isBossWave(wave);
-    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1) * DIFFICULTIES[this.state.difficulty ?? 'difficile'].budget;
+    const threat = this.state.threat ?? 1;
+    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1) * DIFFICULTIES[this.state.difficulty ?? 'difficile'].budget * Math.pow(threat, THREAT.budgetShare);
     const pool = (Object.values(ENEMIES)).filter((e) => !e.boss && e.fromWave <= wave);
     const minCost = Math.min(...pool.map((e) => e.cost));
     const picks: EnemyTypeId[] = [];
@@ -285,7 +306,7 @@ export class Game {
     // Garde-fou : le budget non dépensé (plafond d'ennemis atteint) devient des PV supplémentaires.
     const spent = total - budget;
     const overflow = spent > 0 ? total / spent : 1;
-    const hpMult = hpMultiplier(wave) * overflow * difficultyHp(this.state.difficulty ?? 'difficile', wave);
+    const hpMult = hpMultiplier(wave) * overflow * difficultyHp(this.state.difficulty ?? 'difficile', wave) * Math.pow(threat, THREAT.hpShare);
     const interval = Math.max(cfg.minSpawnInterval, cfg.spawnWindow / Math.max(1, picks.length));
     const queue: SpawnEntry[] = picks.map((type, i) => ({
       type,
@@ -299,7 +320,7 @@ export class Game {
         type: BOSS_POOL[(n - 1) % BOSS_POOL.length],
         pathIdx: this.rng.int(0, this.map.paths.length - 1),
         at: 3,
-        hpMult: Math.pow(cfg.bossHpGrowth, n - 1) * DIFFICULTIES[this.state.difficulty ?? 'difficile'].hp,
+        hpMult: Math.pow(cfg.bossHpGrowth, n - 1) * DIFFICULTIES[this.state.difficulty ?? 'difficile'].hp * Math.pow(threat, THREAT.hpShare),
       });
       queue.sort((a, b) => a.at - b.at);
     }
@@ -387,8 +408,10 @@ export class Game {
           blockedBy = wall.trap;
         } else e.d += speed * dt;
         const path = this.map.paths[e.pathIdx];
+        if (!def.boss) s.waveReach = Math.max(s.waveReach ?? 0, e.d / (path.length - 1));
         if (e.d >= path.length - 1) {
           s.baseHp -= def.leak;
+          s.waveLeaked = (s.waveLeaked ?? 0) + def.leak;
           s.stats.leaks++;
           e.hp = 0;
           e.bounty = 0;
