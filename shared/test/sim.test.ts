@@ -149,7 +149,7 @@ describe('simulation', () => {
       const e = {
         id: 9000 + game.state.enemies.length, type, pathIdx: 0, d, x: path[i].x, y: path[i].y,
         hp: hp ?? def.hp, maxHp: hp ?? def.hp, shield: def.shield, attack: def.attack, bounty: def.bounty,
-        slowFor: 0, slowFactor: 0, dotFor: 0, dotDps: 0, atkCd: 0, spawnCd: def.heals?.every ?? def.spawnEvery ?? 0, halted: 0,
+        slowFor: 0, slowFactor: 0, dotFor: 0, dotDps: 0, atkCd: 0, spawnCd: def.heals?.every ?? def.spawnEvery ?? 0, halted: 0, dotSrc: 0,
       };
       game.state.enemies.push(e);
       return e;
@@ -495,5 +495,19 @@ describe('IA et dépôt avancé sur la durée', () => {
     }
     expect(atDepot).toBeGreaterThan(0);
     expect(atDepot).toBeGreaterThanOrEqual(atBase);
+  });
+});
+
+describe('bilan de partie', () => {
+  it('compte dégâts, victimes, récolte et PV de la base par vague', () => {
+    const game = run(2, 900);
+    const st = game.state.stats;
+    expect(st.kills).toBeGreaterThan(0);
+    const total = Object.values(st.bySource).reduce((a, b) => a + b.kills, 0);
+    expect(total).toBe(st.kills);
+    expect(st.best).not.toBeNull();
+    expect(st.towersBuilt).toBeGreaterThan(0);
+    expect(st.spent).toBeGreaterThan(0);
+    expect(st.baseHpByWave.length).toBeGreaterThan(0);
   });
 });

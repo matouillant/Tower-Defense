@@ -35,6 +35,9 @@ export interface TowerState {
   /** Rayon focalisé : cible suivie et nombre de tirs consécutifs dessus. */
   focusId: number;
   focus: number;
+  /** Dégâts infligés et ennemis achevés depuis la pose (bilan de fin de partie). */
+  dealt: number;
+  kills: number;
 }
 
 export interface EnemyState {
@@ -58,6 +61,8 @@ export interface EnemyState {
   spawnCd: number;
   /** Temps déjà passé à l'arrêt pour tirer (les tireurs ne s'arrêtent qu'un temps limité). */
   halted: number;
+  /** Tour à l'origine de la brûlure en cours (0 = aucune), pour le bilan. */
+  dotSrc: number;
 }
 
 export interface PickupState {
@@ -144,6 +149,26 @@ export interface GameState {
   bossesKilled: number;
   /** Niveau de difficulté choisi au lancement. */
   difficulty: Difficulty;
+  stats: GameStats;
+  /** Partie gagnée (objectif de mission atteint). */
+  won: boolean;
+}
+
+/** Statistiques de la partie, pour le bilan de fin. */
+export interface GameStats {
+  /** Dégâts et ennemis achevés, par source : type de tourelle, « hero », « competence », « piege ». */
+  bySource: Record<string, { damage: number; kills: number }>;
+  kills: number;
+  leaks: number;
+  /** Ressources rapportées par le héros (gisements, butin ramassé). */
+  harvested: number;
+  /** Ressources dépensées en constructions et améliorations. */
+  spent: number;
+  towersBuilt: number;
+  /** PV de la base à la fin de chaque vague (index 0 = vague 1). */
+  baseHpByWave: number[];
+  /** Meilleure tour de la partie, mémorisée même si elle a été vendue ou détruite. */
+  best: { type: TowerTypeId; path: string[]; dealt: number; kills: number } | null;
 }
 
 /** Événements ponctuels, pour les effets visuels et les messages côté client. */

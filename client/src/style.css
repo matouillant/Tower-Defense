@@ -322,3 +322,19 @@ button.primary { position: sticky; bottom: 0; z-index: 2; box-shadow: 0 -8px 10p
 html:has(#game:not([hidden])), html:has(#game:not([hidden])) body { overflow: hidden; }
 #game { position: fixed; inset: 0; height: auto; touch-action: pan-x pan-y; }
 #panel, #ai-panel, #modal .box, .tree-scroll { touch-action: pan-y; overscroll-behavior: contain; }
+
+/* ---- Bilan de fin de partie ---- */
+.box.summary { max-width: 460px; text-align: left; }
+.box.summary h2 { text-align: center; }
+.mvp { display: flex; gap: 10px; align-items: center; padding: 8px; margin: 6px 0; border-radius: 12px; background: linear-gradient(90deg, #ffd84a22, transparent); border: 1px solid #ffd84a55; }
+.mvp img { width: 54px; height: 54px; }
+.mvp small { display: block; color: #ffd84a; text-transform: uppercase; letter-spacing: 1px; font-size: 10px; }
+.mvp b { display: block; font-size: 16px; }
+.bars { display: flex; flex-direction: column; gap: 4px; }
+.barrow { display: grid; grid-template-columns: 110px 1fr 54px; align-items: center; gap: 6px; font-size: 12px; }
+.barrow i { height: 10px; border-radius: 6px; background: linear-gradient(90deg, #35e0ff, #7dffc0); }
+.barrow b { text-align: right; }
+svg.curve { width: 100%; height: 70px; display: block; margin: 4px 0; border-radius: 8px; background: #0b1530; }
+
+.setrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 4px 0; flex-wrap: wrap; }
+.setrow > span { font-weight: 700; }

@@ -116,6 +116,8 @@ export class Game {
       rewardChoices: null,
       toSpawn: 0,
       bossesKilled: 0,
+      won: false,
+      stats: { bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
       difficulty: DIFFICULTIES[difficulty] ? difficulty : 'difficile',
     };
     this.resetAllowance();
@@ -191,6 +193,7 @@ export class Game {
 
     if (s.baseHp <= 0) {
       s.baseHp = 0;
+      s.stats.baseHpByWave.push(0);
       s.phase = 'over';
       this.emit({ t: 'over', wave: s.wave });
     } else if (s.phase === 'wave' && this.spawnQueue.length === 0 && s.enemies.length === 0) {
@@ -223,6 +226,7 @@ export class Game {
     const s = this.state;
     s.phase = 'inter';
     s.phaseTimer = G.interDuration;
+    s.stats.baseHpByWave.push(s.baseHp);
     const bonus = waveEndBonus(s.wave);
     s.scrap += bonus;
     this.emit({ t: 'income', amount: bonus, wave: s.wave });
@@ -309,6 +313,7 @@ export class Game {
       atkCd: def.attackCooldown * this.rng.next(),
       spawnCd: def.spawnEvery ?? def.heals?.every ?? 0,
       halted: 0,
+      dotSrc: 0,
     };
     this.placeOnPath(e);
     s.enemies.push(e);
@@ -332,7 +337,7 @@ export class Game {
       const def = ENEMIES[e.type];
       if (e.dotFor > 0) {
         e.dotFor -= dt;
-        this.damageEnemy(e, e.dotDps * dt, true);
+        this.damageEnemy(e, e.dotDps * dt, true, this.state.towers.find((t) => t.id === e.dotSrc) ?? 'competence');
         if (e.hp <= 0) continue;
       }
       // Les tireurs s'arrêtent dès qu'une cible est à portée ; les autres avancent toujours.
@@ -349,6 +354,7 @@ export class Game {
         const path = this.map.paths[e.pathIdx];
         if (e.d >= path.length - 1) {
           s.baseHp -= def.leak;
+          s.stats.leaks++;
           e.hp = 0;
           e.bounty = 0;
           continue;
@@ -424,8 +430,27 @@ export class Game {
     e.bounty = 0;
   }
 
-  private damageEnemy(e: EnemyState, amount: number, pierce: boolean) {
+  /** Mémorise dégâts et victimes par source, pour le bilan de fin de partie. */
+  private credit(src: TowerState | string, damage: number, killed: boolean) {
+    const st = this.state.stats;
+    const key = typeof src === 'string' ? src : src.type;
+    const b = (st.bySource[key] ??= { damage: 0, kills: 0 });
+    b.damage += damage;
+    if (killed) {
+      b.kills++;
+      st.kills++;
+    }
+    if (typeof src !== 'string') {
+      src.dealt += damage;
+      if (killed) src.kills++;
+      if (!st.best || src.dealt > st.best.dealt) st.best = { type: src.type, path: [...src.path], dealt: src.dealt, kills: src.kills };
+      else if (st.best.type === src.type && st.best.dealt <= src.dealt) st.best.kills = src.kills;
+    }
+  }
+
+  private damageEnemy(e: EnemyState, amount: number, pierce: boolean, src: TowerState | string = 'competence') {
     if (e.hp <= 0) return;
+    const before = e.hp;
     const armor = ENEMIES[e.type].armor;
     if (armor && !pierce) amount = Math.max(amount * 0.25, amount - armor);
     if (e.shield > 0 && !pierce) {
@@ -434,6 +459,7 @@ export class Game {
       amount -= absorbed;
     }
     e.hp -= amount;
+    this.credit(src, Math.min(before, Math.max(0, amount)), e.hp <= 0);
     if (e.hp > 0) return;
     const s = this.state;
     const boss = !!ENEMIES[e.type].boss;
@@ -518,8 +544,9 @@ export class Game {
         if (stats.dot > 0) {
           e.dotDps = Math.max(e.dotFor > 0 ? e.dotDps : 0, stats.dot * power);
           e.dotFor = stats.dotDuration;
+          e.dotSrc = t.id;
         }
-        this.damageEnemy(e, amount, stats.pierceShield);
+        this.damageEnemy(e, amount, stats.pierceShield, t);
       };
       const beamAngle = Math.atan2(ty - t.y, tx - t.x);
       if (stats.shape === 'line') t.facing = ((Math.round(beamAngle / (Math.PI / 4)) % 8) + 8) % 8;
@@ -722,11 +749,13 @@ export class Game {
     // Près de la base : dépôt automatique de ce qu'il porte, et soins.
     if (dist(hero.x, hero.y, base.x, base.y) <= HERO_CONFIG.baseRadius) {
       s.scrap += hero.carry;
+      s.stats.harvested += hero.carry;
       hero.carry = 0;
       hero.hp = Math.min(stats.maxHp, hero.hp + HERO_CONFIG.baseRegen * dt);
     } else if (hero.carry > 0 && s.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff && dist(hero.x, hero.y, t.x, t.y) <= HERO_CONFIG.baseRadius)) {
       // Dépôt avancé : on y décharge sans retourner à la base (les soins restent réservés à la base).
       s.scrap += hero.carry;
+      s.stats.harvested += hero.carry;
       hero.carry = 0;
     }
     // Ramassage automatique au passage.
@@ -870,6 +899,7 @@ export class Game {
     const pay = (cost: number) => {
       if (s.scrap < cost) return false;
       s.scrap -= cost;
+      s.stats.spent += cost;
       return true;
     };
     const poor = 'Pas assez de ressources.';
@@ -919,9 +949,10 @@ export class Game {
         if (!slot || !def) return 'Emplacement ou tour invalide.';
         if (s.towers.some((t) => t.slotId === slot.id)) return 'Emplacement occupé.';
         if (!pay(def.cost)) return poor;
+        s.stats.towersBuilt++;
         s.towers.push({
           id: this.nextId++, type: def.id, slotId: slot.id, x: slot.x, y: slot.y, hp: def.base.maxHp, maxHpFactor: 1, path: [], rangeLvl: 0, facing: bestFacing(this.map, def.base, slot.x, slot.y, slot.high),
-          invested: def.cost, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0, focusId: 0, focus: 0,
+          invested: def.cost, cooldown: 0, ammo: def.base.ammo || -1, targeting: 'first', aiPriority: 'normal', disabledFor: 0, overchargeFor: 0, focusId: 0, focus: 0, dealt: 0, kills: 0,
         });
         return null;
       }

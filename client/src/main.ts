@@ -41,6 +41,8 @@ import '@fontsource/exo-2/600.css';
 import '@fontsource/exo-2/800.css';
 import { ART, towerIcon } from './art';
 import { Net, loadSession, saveSession } from './net';
+import { audio } from './audio';
+import { saveFxQuality } from './effects';
 import { GameScene, Tap, createGame } from './scene';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -73,7 +75,12 @@ let aiShown = '';
 let aiShownAt = 0;
 const speedLabel = (v: number) => `x${String(v).replace('.', ',')}`;
 
-const cmd = (c: Command) => net.send({ m: 'cmd', cmd: c });
+const cmd = (c: Command) => {
+  net.send({ m: 'cmd', cmd: c });
+  if (c.c === 'build') audio.play('build');
+  else if (c.c === 'upgrade' || c.c === 'heroUpgrade') audio.play('upgrade');
+  else if (c.c === 'sell') audio.play('sell');
+};
 
 // ---------------------------------------------------------------- plein écran
 const anyDoc = document as Document & { webkitFullscreenEnabled?: boolean; webkitFullscreenElement?: Element; webkitExitFullscreen?: () => Promise<void> };
@@ -358,6 +365,7 @@ net.onMessage = (msg: ServerMessage) => {
       announceNewEnemies(msg.state);
       scene?.pushState(msg.state, msg.events);
       for (const e of msg.events) onEvent(e);
+      soundState(msg.state);
       renderGame();
       break;
     case 'error':
@@ -374,12 +382,42 @@ net.onMessage = (msg: ServerMessage) => {
         break;
       }
       toast(msg.text, 'err');
+      audio.play('error');
       if (!lobby) saveSession(null);
       break;
   }
 };
 
+/** Bruitages de la partie, d'après les événements de la simulation. */
+function soundOf(e: GameEvent) {
+  switch (e.t) {
+    case 'shot':
+      if (e.splash >= 1.2) audio.play('explosion', 0.6);
+      else if (e.kind !== 'relais' && e.kind !== 'depot') audio.play(e.kind, 0.8);
+      break;
+    case 'death': audio.play(e.boss ? 'bossDeath' : 'death', 0.7); break;
+    case 'blast': audio.play('explosion'); break;
+    case 'hit': audio.play(e.target === 'hero' ? 'heroHit' : 'explosion', e.target === 'hero' ? 0.8 : 0.35); break;
+    case 'heal': audio.play('heal'); break;
+    case 'wave': audio.play(e.boss ? 'bossWave' : 'wave'); break;
+    case 'income': audio.play('coins'); break;
+    case 'ability': audio.play(e.id === 'foudre' ? 'thunder' : e.id === 'ralentir' ? 'slowField' : 'upgrade'); break;
+    case 'over': audio.play('over'); break;
+  }
+}
+
+let lastBaseHpSound = -1;
+/** Ambiance musicale selon la phase ; alerte quand la base encaisse. */
+function soundState(s: GameState) {
+  if (lastBaseHpSound >= 0 && s.baseHp < lastBaseHpSound) audio.play('baseHit');
+  lastBaseHpSound = s.baseHp;
+  const boss = s.phase === 'wave' && s.enemies.some((e) => ENEMIES[e.type].boss);
+  audio.setMood(s.phase === 'over' ? 'off' : boss ? 'boss' : s.phase === 'wave' ? 'wave' : 'calm');
+  audio.duck(!!lobby?.paused);
+}
+
 function onEvent(e: GameEvent) {
+  soundOf(e);
   // Les messages de l'IA ne s'affichent pas en surimpression : ils vont dans la petite bulle du bas de carte.
   if (e.t === 'msg' && e.from === 'jeu') toast(e.text);
   else if (e.t === 'income') toast(`Vague ${e.wave} terminée : +${e.amount} ressources`);
@@ -683,6 +721,16 @@ function heroTreePanel(s: GameState): string {
     ${ups.length ? `<div class="grid">${ups.map((n) => `<button data-act="heroUpgrade" data-id="${n.id}" ${s.scrap < n.cost ? 'disabled' : ''}><b>${n.name}</b> · ${n.cost}<small>${n.desc}</small></button>`).join('')}</div>` : '<div class="muted">Arbre terminé.</div>'}`;
 }
 
+const LEVELS: [number, string][] = [[0, 'Coupé'], [0.35, 'Bas'], [0.7, 'Moyen'], [1, 'Fort']];
+/** Son, musique et qualité des effets visuels (enregistrés sur l'appareil). */
+function settingsHtml(): string {
+  const row = (key: 'sfx' | 'music', label: string) =>
+    `<div class="setrow"><span>${label}</span><div class="chips">${LEVELS.map(([v, n]) => `<button class="mini ${Math.abs(audio.settings[key] - v) < 0.01 ? 'on' : ''}" data-act="vol" data-kind="${key}" data-id="${v}">${n}</button>`).join('')}</div></div>`;
+  const q = scene?.effects?.quality ?? 'high';
+  return `${row('sfx', 'Bruitages')}${row('music', 'Musique')}
+    <div class="setrow"><span>Effets visuels</span><div class="chips"><button class="mini ${q === 'high' ? 'on' : ''}" data-act="fxq" data-id="high">Élevés</button><button class="mini ${q === 'low' ? 'on' : ''}" data-act="fxq" data-id="low">Réduits</button></div></div>`;
+}
+
 function menuPanel(s: GameState): string {
   const slots = lobby!.slots
     .map((sl) => {
@@ -703,6 +751,7 @@ function menuPanel(s: GameState): string {
       ${canRestart ? `<button data-act="restart">${confirmLabel('restart', 'Rejouer · nouvelle carte')}</button><button data-act="restartSame">${confirmLabel('restartSame', 'Rejouer · même carte')}</button>` : ''}
       <button class="danger" data-act="home">${confirmLabel('home', 'Quitter vers l’accueil')}</button>
     </div>
+    <div class="section">Réglages</div>${settingsHtml()}
     ${isIPhone && !isStandalone ? '<small>Plein écran sur iPhone : bouton Partager de Safari, puis « Sur l’écran d’accueil ».</small>' : ''}
     <small>Seed de la carte : ${lobby!.seed} · score : vague ${s.wave}</small>`;
 }
@@ -825,13 +874,49 @@ function renderAiPanel(s: GameState) {
   $<HTMLButtonElement>('ai-retreat').disabled = s.ai.orderCooldown > 0;
 }
 
+const SOURCE_NAME: Record<string, string> = { hero: 'Héros', competence: 'Compétences', piege: 'Pièges' };
+const sourceName = (k: string) => SOURCE_NAME[k] ?? TOWERS[k as TowerTypeId]?.name ?? k;
+const duration = (sec: number) => `${Math.floor(sec / 60)} min ${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+
+/** Courbe des PV de la base, vague après vague. */
+function hpCurve(values: number[], max: number): string {
+  if (values.length < 2) return '';
+  const W = 280;
+  const H = 70;
+  const pts = values.map((v, i) => `${((i / (values.length - 1)) * W).toFixed(1)},${(H - (v / max) * (H - 6) - 3).toFixed(1)}`).join(' ');
+  return `<svg class="curve" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="0,${H} ${pts} ${W},${H}" fill="#35e0ff22" stroke="none"/><polyline points="${pts}" fill="none" stroke="#35e0ff" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
+}
+
+/** Bilan de fin de partie : chiffres clés, meilleure tour, dégâts par source, courbe de la base. */
+function summaryHtml(s: GameState): string {
+  const st = s.stats;
+  const waves = Math.max(0, s.wave - (s.won ? 0 : 1));
+  const srcs = Object.entries(st.bySource).filter(([, v]) => v.damage > 0).sort((a, b) => b[1].damage - a[1].damage);
+  const top = srcs[0]?.[1].damage || 1;
+  const best = st.best;
+  const bestNames = best ? best.path.map((id) => TOWERS[best.type].nodes.find((n) => n.id === id)?.name ?? id) : [];
+  const maxHp = Math.max(G.baseHp, ...st.baseHpByWave);
+  return `<h2>${s.won ? 'Victoire !' : 'La base est tombée'}</h2>
+    <div class="tiles">${statTile(String(waves), waves > 1 ? 'vagues tenues' : 'vague tenue')}${statTile(String(st.kills), 'ennemis éliminés')}${statTile(String(s.bossesKilled), 'boss')}${statTile(duration(s.time), 'durée')}</div>
+    ${best ? `<div class="mvp"><img src="${towerIcon(best.type)}" alt="" /><div><small>Meilleure tour</small><b>${TOWERS[best.type].name}</b>${bestNames.length ? `<div class="crumbs">${bestNames.join(' › ')}</div>` : ''}<span class="muted small">${fmt(best.dealt)} dégâts · ${best.kills} éliminations</span></div></div>` : ''}
+    <div class="section">Dégâts par source</div>
+    <div class="bars">${srcs.map(([k, v]) => `<div class="barrow"><span>${sourceName(k)}</span><i style="width:${Math.max(3, (v.damage / top) * 100).toFixed(0)}%"></i><b>${fmt(v.damage)}</b></div>`).join('') || '<div class="muted">Aucun dégât.</div>'}</div>
+    <div class="section">Base</div>${hpCurve([maxHp, ...st.baseHpByWave], maxHp)}
+    <div class="muted small">Héros : ${fmt(st.harvested)} ressources rapportées · ${st.towersBuilt} tours construites · ${fmt(st.spent)} dépensées · ${st.leaks} ennemis passés · ${DIFFICULTIES[s.difficulty ?? 'difficile'].name} · seed ${lobby?.seed ?? '?'}</div>`;
+}
+
+function summaryText(s: GameState): string {
+  const st = s.stats;
+  const best = st.best ? `${TOWERS[st.best.type].name} (${fmt(st.best.dealt)} dégâts)` : '—';
+  return `Boulon & le Dôme · ${s.won ? 'Victoire' : `${Math.max(0, s.wave - 1)} vagues tenues`} en ${DIFFICULTIES[s.difficulty ?? 'difficile'].name} · ${st.kills} ennemis · ${s.bossesKilled} boss · meilleure tour : ${best} · ${location.origin}`;
+}
+
 function renderModal(s: GameState) {
   const el = $('modal');
   let html = '';
   if (s.phase === 'over') {
-    html = `<div class="box"><h2>La base est tombée</h2><p>Vous avez tenu <b>${Math.max(0, s.wave - 1)}</b> vague${s.wave - 1 > 1 ? 's' : ''} · ${s.bossesKilled} boss vaincu${s.bossesKilled > 1 ? 's' : ''}.</p>
-      <p class="muted">Seed de la carte : ${lobby!.seed}</p>
-      <div class="stack">${role ? `<button class="primary" data-act="restart">Rejouer · nouvelle carte</button><button data-act="restartSame">Rejouer · même carte</button>` : '<p class="muted">Un joueur du salon peut relancer la partie.</p>'}
+    html = `<div class="box summary">${summaryHtml(s)}
+      <div class="stack"><button data-act="shareSummary">Partager le bilan</button>${role ? `<button class="primary" data-act="restart">Rejouer · nouvelle carte</button><button data-act="restartSame">Rejouer · même carte</button>` : '<p class="muted">Un joueur du salon peut relancer la partie.</p>'}
       <button data-act="home">Retour à l’accueil</button></div></div>`;
   } else if (s.rewardChoices && role === 'strategist') {
     html = `<div class="box"><h2>Boss vaincu !</h2><p>Choisis une récompense :</p><div class="grid">${s.rewardChoices
@@ -887,6 +972,7 @@ $('game').addEventListener('pointerdown', (ev) => {
   // Le plein écran exige un « vrai » geste : il est traité sur le clic, pas sur l'appui.
   if (btn.dataset.act === 'fullscreen') return;
   ev.preventDefault();
+  if (!['build', 'upgrade', 'sell', 'vol'].includes(btn.dataset.act ?? '')) audio.play('click');
   const id = btn.dataset.id ?? '';
   const towerId = panel?.kind === 'tower' ? panel.id : -1;
   switch (btn.dataset.act) {
@@ -939,6 +1025,23 @@ $('game').addEventListener('pointerdown', (ev) => {
     case 'tree': treeView = { type: id as TowerTypeId, towerId: panel?.kind === 'tower' ? panel.id : undefined }; break;
     case 'treeClose': treeView = null; break;
     case 'restart':
+    case 'vol':
+      audio.settings[btn.dataset.kind as 'sfx' | 'music'] = Number(id);
+      audio.save();
+      audio.play('click');
+      break;
+    case 'fxq':
+      if (scene?.effects) {
+        scene.effects.quality = id === 'low' ? 'low' : 'high';
+        saveFxQuality(scene.effects.quality);
+        scene.applyFxQuality();
+      }
+      break;
+    case 'shareSummary': {
+      const text = summaryText(state);
+      (navigator.share ? navigator.share({ title: 'Boulon & le Dôme', text }) : navigator.clipboard.writeText(text).then(() => toast('Bilan copié.'))).catch(() => toast(text));
+      break;
+    }
     case 'difficulty': net.send({ m: 'difficulty', level: id as Difficulty }); break;
     case 'restartSame':
       // En cours de partie, il faut confirmer ; une fois la base tombée, c'est direct.

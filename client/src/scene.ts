@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { ABILITIES, AbilityId, ENEMIES, MAP_CONFIG, TOWERS, bestFacing, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
 import { ART, HEADLESS_TOWERS } from './art';
 import { TERRAIN_PAD, bakeTerrain } from './terrain';
+import { Effects } from './effects';
 
 export const TILE = 48;
 /** Taille minimale d'une case à l'écran, en pixels CSS, pour rester confortable au doigt. */
@@ -75,6 +76,13 @@ export class GameScene extends Phaser.Scene {
   private depositViews: Phaser.GameObjects.Image[] = [];
   private digViews: Phaser.GameObjects.Image[] = [];
   private heroFacing = 0;
+  /** Particules, chiffres de dégâts, tremblements. */
+  effects: Effects | null = null;
+  private enemyHp = new Map<number, { hp: number; flash: number; acc: number; accAt: number }>();
+  private spawnedAt = new Map<number, number>();
+  private lastBaseHp = -1;
+  private dustClock = 0;
+  private bloom: Phaser.FX.Bloom | null = null;
   onTap: (tap: Tap, x: number, y: number) => void = () => {};
   selectedTower: number | null = null;
   selectedSlot: number | null = null;
@@ -108,6 +116,9 @@ export class GameScene extends Phaser.Scene {
     this.fx = [];
     this.buffer = [];
     this.prev = this.cur = null;
+    this.enemyHp.clear();
+    this.spawnedAt.clear();
+    this.lastBaseHp = -1;
   }
 
   setMap(map: GameMap) {
@@ -353,6 +364,8 @@ export class GameScene extends Phaser.Scene {
     this.under = this.add.graphics().setDepth(105);
     this.ui = this.add.graphics().setDepth(5000);
     this.fxg = this.add.graphics().setDepth(6000);
+    this.effects ??= new Effects(this);
+    this.applyFxQuality();
     this.layout(true);
   }
 
@@ -365,6 +378,17 @@ export class GameScene extends Phaser.Scene {
     this.buffer.push({ at: now, state, events, played: false });
     if (this.buffer.length > 30) this.buffer.splice(0, this.buffer.length - 30);
     this.cur = state;
+  }
+
+  /** Éclat (bloom) sur les tirs et explosions : uniquement en qualité élevée et en WebGL. */
+  applyFxQuality() {
+    if (!this.fxg || !this.effects) return;
+    const want = this.effects.quality === 'high' && this.game.renderer.type === Phaser.WEBGL;
+    if (want && !this.bloom) this.bloom = this.fxg.postFX?.addBloom(0xffffff, 1, 1, 1.1, 1.25) ?? null;
+    else if (!want && this.bloom) {
+      this.fxg.postFX?.remove(this.bloom);
+      this.bloom = null;
+    }
   }
 
   /** Effets visuels d'un état : joués au moment où cet état s'affiche, pour rester en phase avec les positions. */
@@ -384,16 +408,50 @@ export class GameScene extends Phaser.Scene {
             view.kick = 1;
           }
         }
+        const fxs = this.effects;
+        if (fxs) {
+          const col = SHOT_COLOR[e.kind];
+          const hx = px(e.fx) + Math.cos(Math.atan2(e.ty - e.fy, e.tx - e.fx)) * TILE * 0.4;
+          const hy = px(e.fy - HEAD_LIFT) + Math.sin(Math.atan2(e.ty - e.fy, e.tx - e.fx)) * TILE * 0.4;
+          if (e.kind !== 'laser') fxs.muzzle(hx, hy, col);
+          const tx = px(e.tx);
+          const ty = px(e.ty);
+          const pts = e.chain;
+          this.time.delayedCall(life * 1000, () => {
+            if (e.kind === 'givre') fxs.frost(tx, ty);
+            else if (e.splash > 0) {
+              fxs.explosion(tx, ty, e.splash * TILE, col);
+              if (e.splash >= 1.6) fxs.shake(0.0025, 120);
+            } else fxs.impact(tx, ty, col, e.kind === 'laser' ? 0.4 : 1);
+            if (pts) for (let k = 0; k + 1 < pts.length; k += 2) fxs.impact(px(pts[k]), px(pts[k + 1]), col, 0.8);
+          });
+        }
       } else if (e.t === 'death') {
         const life = e.boss ? 0.7 : 0.4;
         this.fx.push({ kind: 'burst', x1: e.x, y1: e.y, x2: 0, y2: 0, r: e.boss ? 2 : 0.7, color: e.boss ? 0xffd84a : 0xffffff, life, max: life, seed: (e.x * 31 + e.y * 17) % 7 });
+        this.effects?.death(px(e.x), px(e.y), e.boss ? 0xffd84a : 0xc4cee8, e.boss);
+        if (e.boss) this.effects?.shake(0.012, 450);
       } else if (e.t === 'ability') {
+        if (e.id === 'foudre') {
+          this.effects?.explosion(px(e.x), px(e.y), e.radius * TILE, 0xfff36b);
+          this.effects?.shake(0.006, 250);
+        }
         if (e.id === 'foudre') this.fx.push({ kind: 'bolt', x1: e.x, y1: e.y, x2: 0, y2: 0, r: e.radius, color: 0xfff36b, life: 0.45, max: 0.45, seed: e.x * 13 + e.y });
         else ring(e.x, e.y, e.radius, e.id === 'ralentir' ? 0x5ad7ff : 0xffd84a, 0.7);
-      } else if (e.t === 'hit') ring(e.x, e.y, 0.55, 0xff5d5d, 0.25);
-      else if (e.t === 'heal') ring(e.x, e.y, e.radius, 0x7dffc0, 0.6);
+      } else if (e.t === 'hit') {
+        ring(e.x, e.y, 0.55, 0xff5d5d, 0.25);
+        this.effects?.impact(px(e.x), px(e.y), 0xff5d5d, 0.8);
+      } else if (e.t === 'heal') {
+        ring(e.x, e.y, e.radius, 0x7dffc0, 0.6);
+        this.effects?.sparkle(px(e.x), px(e.y), 0x7dffc0, 6);
+      } else if (e.t === 'income' && this.map) {
+        this.effects?.sparkle(px(this.map.base.x), px(this.map.base.y), 0xffd84a, 16);
+        this.effects?.number(px(this.map.base.x), px(this.map.base.y) - TILE, `+${e.amount}`, '#ffd84a', true);
+      } else if (e.t === 'wave' && e.boss) this.effects?.shake(0.008, 600);
       else if (e.t === 'blast') {
         ring(e.x, e.y, e.radius, 0xff8a3d, 0.4);
+        this.effects?.explosion(px(e.x), px(e.y), e.radius * TILE);
+        this.effects?.shake(0.004, 160);
         this.fx.push({ kind: 'burst', x1: e.x, y1: e.y, x2: 0, y2: 0, r: e.radius * 1.4, color: 0xff5d3d, life: 0.45, max: 0.45, seed: (e.x * 13 + e.y) % 7 });
       }
     }
@@ -497,6 +555,14 @@ export class GameScene extends Phaser.Scene {
     this.prev = A === B ? null : A.state;
     const a = A === B ? 1 : Math.min(1, Math.max(0, (renderAt - A.at) / (B.at - A.at)));
     const dt = deltaMs / 1000;
+    this.effects?.update(dt);
+    if (this.lastBaseHp >= 0 && B.state.baseHp < this.lastBaseHp && this.map) {
+      // La base encaisse : tremblement, étincelles rouges et perte affichée.
+      this.effects?.shake(0.01, 300);
+      this.effects?.impact(px(this.map.base.x), px(this.map.base.y), 0xff5d5d, 3);
+      this.effects?.number(px(this.map.base.x), px(this.map.base.y) - TILE * 0.6, `-${this.lastBaseHp - B.state.baseHp}`, '#ff6b6b', true);
+    }
+    this.lastBaseHp = B.state.baseHp;
     const t = time / 1000;
     g.clear();
     this.under?.clear();
@@ -638,8 +704,29 @@ export class GameScene extends Phaser.Scene {
       const boss = !!ENEMIES[e.type].boss;
       const wob = Math.sin(t * (5 + ENEMIES[e.type].speed * 4) + e.id);
       if (p && Math.hypot(e.x - p.x, e.y - p.y) > 0.001) img.setRotation(Phaser.Math.Angle.RotateTo(img.rotation, Math.atan2(e.y - p.y, e.x - p.x), dt * 9));
-      img.setPosition(x, y).setDisplaySize(size * (1 + wob * 0.03), size * (1 - wob * 0.04)).setDepth(boss ? 141 : 140);
-      if (e.slowFor > 0) img.setTint(0x9fdcff);
+      // Apparition : l'ennemi « pousse » en un quart de seconde.
+      if (!this.spawnedAt.has(e.id)) this.spawnedAt.set(e.id, t);
+      const grow = Math.min(1, (t - this.spawnedAt.get(e.id)!) / 0.25);
+      const pop = grow < 1 ? 0.4 + 0.6 * Phaser.Math.Easing.Back.Out(grow) : 1;
+      // Touché : flash blanc bref et petit écrasement, puis chiffre des dégâts (regroupés pour rester lisibles).
+      let hpTrack = this.enemyHp.get(e.id);
+      if (!hpTrack) this.enemyHp.set(e.id, (hpTrack = { hp: e.hp + e.shield, flash: 0, acc: 0, accAt: t }));
+      const total = e.hp + e.shield;
+      if (total < hpTrack.hp - 0.01) {
+        hpTrack.acc += hpTrack.hp - total;
+        hpTrack.flash = 0.09;
+      }
+      hpTrack.hp = total;
+      if (hpTrack.acc > 0 && (t - hpTrack.accAt > 0.3 || e.hp <= 0)) {
+        if (hpTrack.acc >= 1) this.effects?.number(x, y - size * 0.5, String(Math.round(hpTrack.acc)), boss ? '#ffd84a' : '#ffffff', hpTrack.acc >= 100);
+        hpTrack.acc = 0;
+        hpTrack.accAt = t;
+      }
+      hpTrack.flash -= dt;
+      const squash = hpTrack.flash > 0 ? 0.88 : 1;
+      img.setPosition(x, y).setDisplaySize(size * pop * (1 + wob * 0.03) * (2 - squash), size * pop * (1 - wob * 0.04) * squash).setDepth(boss ? 141 : 140);
+      if (hpTrack.flash > 0) img.setTintFill(0xffffff);
+      else if (e.slowFor > 0) img.setTint(0x9fdcff);
       else img.clearTint();
       if (edef.heals) g.fillStyle(0x7dffc0, 0.07).fillCircle(x, y, edef.heals.radius * TILE).lineStyle(2, 0x7dffc0, 0.35).strokeCircle(x, y, edef.heals.radius * TILE);
       if (e.shield > 0) {
@@ -658,6 +745,8 @@ export class GameScene extends Phaser.Scene {
       if (seenEnemies.has(id)) continue;
       img.destroy();
       this.enemies.delete(id);
+      this.enemyHp.delete(id);
+      this.spawnedAt.delete(id);
     }
 
     // ---- ressources au sol
@@ -693,6 +782,11 @@ export class GameScene extends Phaser.Scene {
       const moving = !!ph && Math.hypot(h.x - ph.x, h.y - ph.y) > 0.01;
       const working = h.progress > 0 && !moving && h.task.kind !== 'idle';
       if (moving && ph) this.heroFacing = Phaser.Math.Angle.RotateTo(this.heroFacing, Math.atan2(h.y - ph.y, h.x - ph.x), dt * 12);
+      this.dustClock -= dt;
+      if (moving && this.dustClock <= 0) {
+        this.dustClock = 0.12;
+        this.effects?.step(x - Math.cos(this.heroFacing) * TILE * 0.3, y - Math.sin(this.heroFacing) * TILE * 0.3);
+      }
       const size = TILE * 1.05;
       // Halo au sol : bleu quand l'IA pilote, vert quand c'est un joueur.
       g.lineStyle(3, s.heroController === 'ai' ? 0x5ad7ff : 0x5fe07a, 0.55 + Math.sin(t * 4) * 0.25).strokeCircle(x, y, size * 0.6);

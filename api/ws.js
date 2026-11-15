@@ -3763,6 +3763,13 @@ var Rng = class {
   constructor(seed) {
     this.s = seed >>> 0;
   }
+  /** État interne, pour sauvegarder et restaurer une partie. */
+  get state() {
+    return this.s;
+  }
+  set state(v) {
+    this.s = v >>> 0;
+  }
   /** Flottant dans [0, 1). */
   next() {
     this.s = this.s + 1831565813 >>> 0;
@@ -3787,10 +3794,6 @@ var Rng = class {
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
     return arr;
-  }
-  /** État interne, pour sauvegarder/restaurer. */
-  get state() {
-    return this.s;
   }
 };
 function hashSeed(input) {
@@ -4138,9 +4141,9 @@ var TOWERS = {
   givre: {
     id: "givre",
     name: "\xC9metteur cryo",
-    desc: "Souffle un c\xF4ne de froid : ralentit les ennemis, peu de d\xE9g\xE2ts.",
+    desc: "Ralentit les ennemis autour de lui, peu de d\xE9g\xE2ts.",
     cost: 60,
-    base: base({ maxHp: 90, damage: 4, range: 3.4, cooldown: 1.1, slow: 0.3, slowDuration: 1.5, shape: "cone", coneHalf: 0.8 }),
+    base: base({ maxHp: 90, damage: 4, range: 3, cooldown: 1.1, slow: 0.3, slowDuration: 1.5 }),
     nodes: [
       { id: "blizzard", name: "Blizzard", desc: "Ralentit toute une zone.", cost: 70, parent: null, stats: { splash: 1.5, slow: 0.35, slowDuration: 2 } },
       { id: "glace-vive", name: "Glace vive", desc: "Ralentissement fort sur une cible, avec des d\xE9g\xE2ts.", cost: 70, parent: null, stats: { damage: 22, slow: 0.55, slowDuration: 2.5 } },
@@ -4162,7 +4165,7 @@ var TOWERS = {
   baliste: {
     id: "baliste",
     name: "Canon \xE0 rails",
-    desc: "Tire en ligne droite et transperce tout ce qui s\u2019y trouve ; munitions limit\xE9es, le h\xE9ros doit la recharger.",
+    desc: "Pivote vers sa cible et tire un trait qui transperce tous les ennemis align\xE9s ; munitions limit\xE9es, le h\xE9ros doit la recharger.",
     cost: 80,
     base: base({ maxHp: 100, damage: 55, range: 5, cooldown: 1.5, ammo: 24, shape: "line", beamWidth: 0.6 }),
     nodes: [
@@ -4289,10 +4292,10 @@ var WAVE_CONFIG = {
   /** Un boss toutes les X vagues. */
   bossEvery: 10,
   /** Budget de la vague n = baseBudget * budgetGrowth^(n-1). */
-  baseBudget: 28,
-  budgetGrowth: 1.11,
+  baseBudget: 36,
+  budgetGrowth: 1.15,
   /** PV des ennemis : hpGrowth^(n-1), puis croissance plus douce après softCapWave (rendements décroissants). */
-  hpGrowth: 1.07,
+  hpGrowth: 1.1,
   hpSoftCapWave: 40,
   hpGrowthAfterCap: 1.035,
   /** L'attaque des ennemis monte plus lentement que leurs PV. */
@@ -4320,6 +4323,12 @@ function hpMultiplier(wave, cfg = WAVE_CONFIG) {
 var attackMultiplier = (wave, cfg = WAVE_CONFIG) => Math.min(cfg.attackMaxMult, Math.pow(cfg.attackGrowth, wave - 1));
 var bountyMultiplier = (wave, cfg = WAVE_CONFIG) => Math.min(cfg.bountyMaxMult, Math.pow(cfg.bountyGrowth, wave - 1));
 var waveBudget = (wave, cfg = WAVE_CONFIG) => cfg.baseBudget * Math.pow(cfg.budgetGrowth, wave - 1);
+var DIFFICULTIES = {
+  normal: { name: "Normal", desc: "Pour d\xE9couvrir le jeu.", budget: 0.75, hp: 0.85, hpPerWave: 1 },
+  difficile: { name: "Difficile", desc: "Vagues nombreuses et coriaces : il faut une vraie strat\xE9gie.", budget: 1, hp: 1, hpPerWave: 1.01 },
+  cauchemar: { name: "Cauchemar", desc: "Pour les strat\xE8ges aguerris : chaque erreur co\xFBte cher.", budget: 1.3, hp: 1.25, hpPerWave: 1.03 }
+};
+var difficultyHp = (d, wave) => DIFFICULTIES[d].hp * Math.pow(DIFFICULTIES[d].hpPerWave, Math.max(0, wave - 1));
 var isBossWave = (wave, cfg = WAVE_CONFIG) => wave > 0 && wave % cfg.bossEvery === 0;
 
 // shared/src/config/game.ts
@@ -4410,7 +4419,7 @@ var REWARDS = {
   renfort: { name: "Renfort", desc: "Efface l\u2019usure de toutes les tours." },
   tactique: { name: "Tactique", desc: "Comp\xE9tences recharg\xE9es 15 % plus vite, d\xE9finitivement." }
 };
-var WAVE_END_BONUS = { base: 40, perWave: 12 };
+var WAVE_END_BONUS = { base: 20, perWave: 8 };
 var waveEndBonus = (wave) => WAVE_END_BONUS.base + WAVE_END_BONUS.perWave * wave;
 var REWARD_SCRAP_BASE = 150;
 var REWARD_SCRAP_PER_WAVE = 10;
@@ -4434,14 +4443,19 @@ function inShape(stats, facing, tx, ty, ex, ey) {
   const dy = ey - ty;
   const d = Math.hypot(dx, dy);
   if (d > stats.range || d < stats.minRange) return false;
-  if (stats.shape === "circle") return true;
+  if (stats.shape !== "cone") return true;
   const a = facingAngle(facing);
   const fwd = dx * Math.cos(a) + dy * Math.sin(a);
-  if (stats.shape === "line") return fwd >= 0 && Math.abs(-dx * Math.sin(a) + dy * Math.cos(a)) <= stats.beamWidth;
   return d < 1e-6 || Math.acos(Math.max(-1, Math.min(1, fwd / d))) <= stats.coneHalf;
 }
+function onBeam(range, beamWidth, angle, tx, ty, ex, ey) {
+  const dx = ex - tx;
+  const dy = ey - ty;
+  const fwd = dx * Math.cos(angle) + dy * Math.sin(angle);
+  return fwd >= 0 && fwd <= range && Math.abs(-dx * Math.sin(angle) + dy * Math.cos(angle)) <= beamWidth;
+}
 function bestFacing(map, stats, x, y, high) {
-  if (stats.shape === "circle") return 0;
+  if (stats.shape !== "cone") return 0;
   const st = { ...stats, range: stats.range * (high ? 1 + MAP_CONFIG.highGroundRangeBonus : 1) };
   let best = 0;
   let bestN = -1;
@@ -4622,13 +4636,16 @@ function decideHeroTask(game) {
       game.map.deposits.forEach((dep) => {
         if (s.deposits[dep.id] <= 0) return;
         if (backHome(dep.x, dep.y) + GAME_CONFIG.harvestTime + 1 > timeLeft) return;
-        const d = steps(dep.x, dep.y);
+        const drop2 = game.nearestDrop(dep.x, dep.y);
+        const d = steps(dep.x, dep.y) + Math.abs(dep.x - drop2.x) + Math.abs(dep.y - drop2.y);
         if (!best || d < best.d) best = { id: dep.id, d };
       });
       if (best) return { kind: "harvest", depositId: best.id };
     }
   }
-  if (hero.carry > 0 || hpFrac < 1 || !atBase && !game.state.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff)) return { kind: "deliver" };
+  const hasDepot = game.state.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff);
+  if (hero.carry > 0) return { kind: "deliver" };
+  if (hpFrac < (hasDepot ? 0.6 : 1) || !atBase && !hasDepot) return { kind: "deliver" };
   return { kind: "idle" };
 }
 
@@ -4645,8 +4662,8 @@ function salvageValue(tower, ratio) {
   const frac = Math.max(0, tower.hp) / towerMaxHp(tower);
   return Math.floor(tower.invested * ratio * (0.4 + 0.6 * frac));
 }
-var Game = class {
-  constructor(map) {
+var Game = class _Game {
+  constructor(map, difficulty = "difficile") {
     this.map = map;
     this.rng = new Rng(map.seed ^ 2654435769);
     this.mud = new Set(map.mud);
@@ -4670,7 +4687,10 @@ var Game = class {
       cooldownMult: 1,
       rewardChoices: null,
       toSpawn: 0,
-      bossesKilled: 0
+      bossesKilled: 0,
+      won: false,
+      stats: { bySource: {}, kills: 0, leaks: 0, harvested: 0, spent: 0, towersBuilt: 0, baseHpByWave: [], best: null },
+      difficulty: DIFFICULTIES[difficulty] ? difficulty : "difficile"
     };
     this.resetAllowance();
   }
@@ -4684,6 +4704,20 @@ var Game = class {
   mud;
   /** Champs de distance (BFS) vers une case, pour le déplacement du héros. La carte est fixe : cache permanent. */
   fields = /* @__PURE__ */ new Map();
+  exportSim() {
+    return { rng: this.rng.state, nextId: this.nextId, spawnQueue: this.spawnQueue, waveClock: this.waveClock, aiClock: this.aiClock };
+  }
+  /** Reprend une partie à partir d'un état sauvegardé (par exemple gardé par un client après une coupure du serveur). */
+  static restore(map, state, sim) {
+    const g = new _Game(map);
+    Object.assign(g.state, state);
+    g.rng.state = sim.rng;
+    g.nextId = Math.max(sim.nextId, 1 + Math.max(0, ...state.towers.map((t) => t.id), ...state.enemies.map((e) => e.id), ...state.pickups.map((p) => p.id)));
+    g.spawnQueue = Array.isArray(sim.spawnQueue) ? sim.spawnQueue : [];
+    g.waveClock = sim.waveClock || 0;
+    g.aiClock = sim.aiClock || 0;
+    return g;
+  }
   /** Renvoie les événements accumulés depuis le dernier appel, et vide la file. */
   drainEvents() {
     const out = this.events;
@@ -4730,6 +4764,7 @@ var Game = class {
     }
     if (s.baseHp <= 0) {
       s.baseHp = 0;
+      s.stats.baseHpByWave.push(0);
       s.phase = "over";
       this.emit({ t: "over", wave: s.wave });
     } else if (s.phase === "wave" && this.spawnQueue.length === 0 && s.enemies.length === 0) {
@@ -4758,6 +4793,7 @@ var Game = class {
     const s = this.state;
     s.phase = "inter";
     s.phaseTimer = GAME_CONFIG.interDuration;
+    s.stats.baseHpByWave.push(s.baseHp);
     const bonus = waveEndBonus(s.wave);
     s.scrap += bonus;
     this.emit({ t: "income", amount: bonus, wave: s.wave });
@@ -4772,7 +4808,7 @@ var Game = class {
   buildWave(wave) {
     const cfg = WAVE_CONFIG;
     const boss = isBossWave(wave);
-    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1);
+    const total = waveBudget(wave) * (boss ? cfg.bossEscortBudget : 1) * DIFFICULTIES[this.state.difficulty ?? "difficile"].budget;
     const pool = Object.values(ENEMIES).filter((e) => !e.boss && e.fromWave <= wave);
     const minCost = Math.min(...pool.map((e) => e.cost));
     const picks = [];
@@ -4785,7 +4821,7 @@ var Game = class {
     }
     const spent = total - budget;
     const overflow = spent > 0 ? total / spent : 1;
-    const hpMult = hpMultiplier(wave) * overflow;
+    const hpMult = hpMultiplier(wave) * overflow * difficultyHp(this.state.difficulty ?? "difficile", wave);
     const interval = Math.max(cfg.minSpawnInterval, cfg.spawnWindow / Math.max(1, picks.length));
     const queue = picks.map((type, i) => ({
       type,
@@ -4799,7 +4835,7 @@ var Game = class {
         type: BOSS_POOL[(n - 1) % BOSS_POOL.length],
         pathIdx: this.rng.int(0, this.map.paths.length - 1),
         at: 3,
-        hpMult: Math.pow(cfg.bossHpGrowth, n - 1)
+        hpMult: Math.pow(cfg.bossHpGrowth, n - 1) * DIFFICULTIES[this.state.difficulty ?? "difficile"].hp
       });
       queue.sort((a, b) => a.at - b.at);
     }
@@ -4839,7 +4875,8 @@ var Game = class {
       dotDps: 0,
       atkCd: def.attackCooldown * this.rng.next(),
       spawnCd: def.spawnEvery ?? def.heals?.every ?? 0,
-      halted: 0
+      halted: 0,
+      dotSrc: 0
     };
     this.placeOnPath(e);
     s.enemies.push(e);
@@ -4860,7 +4897,7 @@ var Game = class {
       const def = ENEMIES[e.type];
       if (e.dotFor > 0) {
         e.dotFor -= dt;
-        this.damageEnemy(e, e.dotDps * dt, true);
+        this.damageEnemy(e, e.dotDps * dt, true, this.state.towers.find((t) => t.id === e.dotSrc) ?? "competence");
         if (e.hp <= 0) continue;
       }
       let target = def.halts && e.halted < WAVE_CONFIG.haltMax ? this.findTarget(e, def.attackRange) : void 0;
@@ -4876,6 +4913,7 @@ var Game = class {
         const path = this.map.paths[e.pathIdx];
         if (e.d >= path.length - 1) {
           s.baseHp -= def.leak;
+          s.stats.leaks++;
           e.hp = 0;
           e.bounty = 0;
           continue;
@@ -4943,8 +4981,26 @@ var Game = class {
     e.hp = 0;
     e.bounty = 0;
   }
-  damageEnemy(e, amount, pierce) {
+  /** Mémorise dégâts et victimes par source, pour le bilan de fin de partie. */
+  credit(src, damage, killed) {
+    const st = this.state.stats;
+    const key = typeof src === "string" ? src : src.type;
+    const b = st.bySource[key] ??= { damage: 0, kills: 0 };
+    b.damage += damage;
+    if (killed) {
+      b.kills++;
+      st.kills++;
+    }
+    if (typeof src !== "string") {
+      src.dealt += damage;
+      if (killed) src.kills++;
+      if (!st.best || src.dealt > st.best.dealt) st.best = { type: src.type, path: [...src.path], dealt: src.dealt, kills: src.kills };
+      else if (st.best.type === src.type && st.best.dealt <= src.dealt) st.best.kills = src.kills;
+    }
+  }
+  damageEnemy(e, amount, pierce, src = "competence") {
     if (e.hp <= 0) return;
+    const before = e.hp;
     const armor = ENEMIES[e.type].armor;
     if (armor && !pierce) amount = Math.max(amount * 0.25, amount - armor);
     if (e.shield > 0 && !pierce) {
@@ -4953,6 +5009,7 @@ var Game = class {
       amount -= absorbed;
     }
     e.hp -= amount;
+    this.credit(src, Math.min(before, Math.max(0, amount)), e.hp <= 0);
     if (e.hp > 0) return;
     const s = this.state;
     const boss = !!ENEMIES[e.type].boss;
@@ -5028,10 +5085,13 @@ var Game = class {
         if (stats.dot > 0) {
           e.dotDps = Math.max(e.dotFor > 0 ? e.dotDps : 0, stats.dot * power);
           e.dotFor = stats.dotDuration;
+          e.dotSrc = t.id;
         }
-        this.damageEnemy(e, amount, stats.pierceShield);
+        this.damageEnemy(e, amount, stats.pierceShield, t);
       };
-      const victims = stats.shape === "line" ? s.enemies.filter((e) => e.hp > 0 && inShape(stats, t.facing, t.x, t.y, e.x, e.y)) : stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
+      const beamAngle = Math.atan2(ty - t.y, tx - t.x);
+      if (stats.shape === "line") t.facing = (Math.round(beamAngle / (Math.PI / 4)) % 8 + 8) % 8;
+      const victims = stats.shape === "line" ? s.enemies.filter((e) => e.hp > 0 && onBeam(stats.range, stats.beamWidth, beamAngle, t.x, t.y, e.x, e.y)) : stats.splash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, tx, ty) <= stats.splash) : [target];
       for (const e of victims) strike(e, damage);
       let chain;
       if (stats.chain > 0) {
@@ -5058,7 +5118,9 @@ var Game = class {
           from = next;
         }
       }
-      this.emit({ t: "shot", kind: t.type, fx: t.x, fy: t.y, tx, ty, splash: stats.splash, ...chain?.length ? { chain } : {} });
+      const ex = stats.shape === "line" ? t.x + Math.cos(beamAngle) * stats.range : tx;
+      const ey = stats.shape === "line" ? t.y + Math.sin(beamAngle) * stats.range : ty;
+      this.emit({ t: "shot", kind: t.type, fx: t.x, fy: t.y, tx: ex, ty: ey, splash: stats.splash, ...chain?.length ? { chain } : {} });
     }
   }
   removeTower(id) {
@@ -5212,10 +5274,12 @@ var Game = class {
     }
     if (dist(hero.x, hero.y, base2.x, base2.y) <= HERO_CONFIG.baseRadius) {
       s.scrap += hero.carry;
+      s.stats.harvested += hero.carry;
       hero.carry = 0;
       hero.hp = Math.min(stats.maxHp, hero.hp + HERO_CONFIG.baseRegen * dt);
     } else if (hero.carry > 0 && s.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff && dist(hero.x, hero.y, t.x, t.y) <= HERO_CONFIG.baseRadius)) {
       s.scrap += hero.carry;
+      s.stats.harvested += hero.carry;
       hero.carry = 0;
     }
     for (const p of s.pickups) {
@@ -5234,7 +5298,8 @@ var Game = class {
         if (this.moveHero(task.x, task.y, 0.05, dt) || !this.isWalkable(task.x, task.y)) done();
         break;
       case "deliver": {
-        if (hero.carry === 0 && hero.hp >= stats.maxHp) return done();
+        const hasDepot = this.nearestDrop(hero.x, hero.y) !== base2 || s.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff);
+        if (hero.carry === 0 && (hero.hp >= stats.maxHp || hasDepot && hero.hp >= stats.maxHp * 0.6 && dist(hero.x, hero.y, base2.x, base2.y) > HERO_CONFIG.baseRadius)) return done();
         const drop = hero.carry > 0 ? this.nearestDrop(hero.x, hero.y) : base2;
         this.moveHero(drop.x, drop.y, 0.5, dt);
         break;
@@ -5350,6 +5415,7 @@ var Game = class {
     const pay = (cost) => {
       if (s.scrap < cost) return false;
       s.scrap -= cost;
+      s.stats.spent += cost;
       return true;
     };
     const poor = "Pas assez de ressources.";
@@ -5397,6 +5463,7 @@ var Game = class {
         if (!slot || !def) return "Emplacement ou tour invalide.";
         if (s.towers.some((t) => t.slotId === slot.id)) return "Emplacement occup\xE9.";
         if (!pay(def.cost)) return poor;
+        s.stats.towersBuilt++;
         s.towers.push({
           id: this.nextId++,
           type: def.id,
@@ -5416,7 +5483,9 @@ var Game = class {
           disabledFor: 0,
           overchargeFor: 0,
           focusId: 0,
-          focus: 0
+          focus: 0,
+          dealt: 0,
+          kills: 0
         });
         return null;
       }
@@ -5591,10 +5660,12 @@ var Room = class {
   /** Jeton du joueur qui tient chaque rôle (connecté ou en cours de reconnexion). */
   slots = { strategist: null, hero: null };
   sinceState = 0;
+  sinceSave = 1;
   /** Temps de jeu en attente : la simulation avance toujours par pas fixes, quelle que soit la vitesse. */
   pending = 0;
   /** Joueur qui a mis la partie en pause (null = elle tourne). */
   pausedBy = null;
+  difficulty = "difficile";
   emptySince = 0;
   get connected() {
     return [...this.clients.values()].filter((c) => c.socket);
@@ -5618,7 +5689,8 @@ var Room = class {
       speed: this.speed,
       paused: this.pausedBy,
       slots: ROLES.map((role) => ({ role, ...this.slotStatus(role) })),
-      spectators: this.connected.filter((c) => !c.role).length
+      spectators: this.connected.filter((c) => !c.role).length,
+      difficulty: this.difficulty
     };
   }
   send(client, msg) {
@@ -5635,6 +5707,24 @@ var Room = class {
   /** Premier rôle libre pour un nouvel arrivant : stratège s'il manque, sinon héros à la place de l'IA. */
   freeRole() {
     return ROLES.find((r) => this.slots[r] === null) ?? null;
+  }
+  /**
+   * Reprise d'une partie perdue par le serveur : on la recrée à partir de ce que le client a gardé,
+   * avec son jeton et son rôle. La carte est régénérée à partir de sa seed (génération déterministe).
+   */
+  restoreGame(state, sim, paused, by) {
+    this.game = Game.restore(this.map, state, sim);
+    if (state.difficulty in DIFFICULTIES) this.difficulty = state.difficulty;
+    this.pausedBy = paused ? by : null;
+    this.pending = 0;
+  }
+  /** Crée le client avec un jeton connu (reprise après redémarrage du serveur). */
+  adopt(socket, name, token, role) {
+    if (this.clients.has(token)) return this.join(socket, name, token);
+    const client = { token, name, socket, role: null, disconnectedAt: 0, away: false, speed: 1 };
+    this.clients.set(token, client);
+    if (role && ROLES.includes(role) && this.slots[role] === null) this.assign(client, role);
+    return this.join(socket, name, token);
   }
   join(socket, name, token) {
     let client = token ? this.clients.get(token) : void 0;
@@ -5707,6 +5797,12 @@ var Room = class {
         this.sendState();
         return;
       }
+      case "difficulty": {
+        if (client.role !== "strategist" || !(msg.level in DIFFICULTIES)) return;
+        this.difficulty = msg.level;
+        this.broadcastLobby();
+        return;
+      }
       case "start": {
         if (this.game) return;
         if (client.role !== "strategist") return this.send(client, { m: "error", text: "Seul le strat\xE8ge peut lancer la partie." });
@@ -5743,7 +5839,7 @@ var Room = class {
   }
   /** Démarre (ou redémarre) la partie avec la carte du salon, pour tous les joueurs connectés. */
   begin() {
-    this.game = new Game(this.map);
+    this.game = new Game(this.map, this.difficulty);
     this.pausedBy = null;
     this.pending = 0;
     this.syncHeroController();
@@ -5815,7 +5911,10 @@ var Room = class {
   }
   sendState() {
     if (!this.game) return;
-    const payload = JSON.stringify({ m: "state", state: this.game.state, events: this.game.drainEvents() });
+    this.sinceSave += 1 / GAME_CONFIG.snapshotRate;
+    const withSim = this.sinceSave >= 1;
+    if (withSim) this.sinceSave = 0;
+    const payload = JSON.stringify({ m: "state", state: this.game.state, events: this.game.drainEvents(), ...withSim ? { sim: this.game.exportSim() } : {} });
     for (const c of this.connected) c.socket.send(payload);
   }
   isExpired(now) {
@@ -5832,6 +5931,13 @@ var RoomManager = class {
     }
   }
   /** Seed fournie par le joueur (nombre ou texte libre), sinon tirée au hasard. */
+  /** Recrée un salon perdu, avec son code d'origine. */
+  recreate(code, seed) {
+    if (this.rooms.size >= MAX_ROOMS) return "Le serveur est plein, r\xE9essaie plus tard.";
+    const room = new Room(code, seed >>> 0);
+    this.rooms.set(code, room);
+    return room;
+  }
   create(seedInput) {
     if (this.rooms.size >= MAX_ROOMS) return "Le serveur est plein, r\xE9essaie plus tard.";
     const text = (seedInput ?? "").trim().slice(0, 40);
@@ -5853,7 +5959,7 @@ var RoomManager = class {
 };
 
 // server/src/ws.ts
-var WS_MAX_PAYLOAD = 16 * 1024;
+var WS_MAX_PAYLOAD = 512 * 1024;
 function attachGame(wss) {
   const manager2 = new RoomManager();
   wss.on("connection", (ws) => {
@@ -5880,10 +5986,34 @@ function attachGame(wss) {
         else {
           const code = normalizeCode(String(msg.code ?? ""));
           target = isValidCode(code) ? manager2.rooms.get(code) : void 0;
-          if (!target) return reply({ m: "error", text: "Aucune partie avec ce code." });
+          if (!target) return reply({ m: "error", text: "Aucune partie avec ce code.", code: "noroom" });
         }
         if (typeof target === "string") return reply({ m: "error", text: target });
         const joined = target.join(socket, name, msg.m === "join" && typeof msg.token === "string" ? msg.token : void 0);
+        if (typeof joined === "string") return reply({ m: "error", text: joined });
+        room = target;
+        client = joined;
+        return;
+      }
+      if (msg.m === "restore") {
+        if (client) return;
+        const code = normalizeCode(String(msg.code ?? ""));
+        const token = String(msg.token ?? "");
+        if (!isValidCode(code) || !/^[0-9a-f]{32}$/.test(token) || !msg.state || !msg.sim || !Number.isFinite(msg.seed)) return reply({ m: "error", text: "Reprise impossible." });
+        const name = String(msg.name ?? "").trim().slice(0, 20) || "Joueur";
+        let target = manager2.rooms.get(code);
+        if (!target) {
+          const made = manager2.recreate(code, msg.seed);
+          if (typeof made === "string") return reply({ m: "error", text: made });
+          try {
+            made.restoreGame(msg.state, msg.sim, !!msg.paused, name);
+          } catch {
+            manager2.rooms.delete(code);
+            return reply({ m: "error", text: "Reprise impossible." });
+          }
+          target = made;
+        }
+        const joined = target.adopt(socket, name, token, msg.role === "strategist" || msg.role === "hero" ? msg.role : null);
         if (typeof joined === "string") return reply({ m: "error", text: joined });
         room = target;
         client = joined;
