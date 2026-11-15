@@ -1,5 +1,6 @@
 import { GAME_CONFIG as G, HERO_CONFIG } from '../config/game';
 import { TOWERS } from '../config/towers';
+import { TRAPS } from '../config/traps';
 import type { Game } from './game';
 import { baseTowerStats, dist, heroStats, towerMaxHp } from './stats';
 import type { HeroTask, Posture, TowerState } from './types';
@@ -95,6 +96,19 @@ export function decideHeroTask(game: Game): HeroTask | null {
         return { kind: 'repair', towerId: best.id };
       }
     }
+  }
+
+  // 3 bis. Pièges : construire ceux qu'a achetés le stratège, réarmer les épuisés, réparer les barricades entamées.
+  const trapWork = s.traps.filter((t) => {
+    const def = TRAPS[t.type];
+    if (enemyNear(t.x, t.y, inWave ? Math.max(1.8, posture.avoidEnemies) : 0)) return false;
+    if (t.built < 1) return true;
+    if (t.hp <= 0) return s.scrap >= Math.ceil(def.cost * def.rearmRatio) + 10;
+    return t.type === 'barricade' && t.hp < t.maxHp * (inWave ? 0.5 : 0.95);
+  });
+  if (trapWork.length) {
+    const best = trapWork.reduce((a, b) => (steps(b.x, b.y) + (b.built < 1 ? 0 : 6) < steps(a.x, a.y) + (a.built < 1 ? 0 : 6) ? b : a));
+    return { kind: 'trap', trapId: best.id };
   }
 
   // 4. Recharge des tours à munitions presque vides.

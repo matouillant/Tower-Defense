@@ -27,6 +27,7 @@ import {
 } from '../config/game';
 import { MAP_CONFIG } from '../config/map';
 import { RANGE_UPGRADE, rangeUpgradeCost, TOWERS } from '../config/towers';
+import { TRAP_CONFIG, TRAPS, trapDamage } from '../config/traps';
 import type { GameMap, Vec2 } from '../map/types';
 import { Rng } from '../rng';
 import { decideHeroTask } from './ai';
@@ -39,6 +40,7 @@ import type {
   HeroTask,
   Role,
   TowerState,
+  TrapState,
 } from './types';
 
 export interface SpawnEntry {
@@ -106,6 +108,7 @@ export class Game {
       towers: [],
       enemies: [],
       pickups: [],
+      traps: [],
       hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: 'idle' }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [] },
       deposits: map.deposits.map(() => G.depositStock),
       prospects: map.prospectZones.map(() => 0),
@@ -177,6 +180,7 @@ export class Game {
     }
 
     this.updateEnemies(dt);
+    this.updateTraps(dt);
     this.updateTowers(dt);
     this.updateHero(dt);
     for (const p of s.pickups) p.ttl -= dt;
@@ -342,6 +346,7 @@ export class Game {
       }
       // Les tireurs s'arrêtent dès qu'une cible est à portée ; les autres avancent toujours.
       let target = def.halts && e.halted < WAVE_CONFIG.haltMax ? this.findTarget(e, def.attackRange) : undefined;
+      let blockedBy: TrapState | null = null;
       if (target) e.halted += dt;
       if (!target) {
         let speed = def.speed;
@@ -350,7 +355,12 @@ export class Game {
           e.slowFor -= dt;
           speed *= 1 - e.slowFactor;
         }
-        e.d += speed * dt;
+        // Barricade debout devant : l'ennemi s'arrête devant et la frappe.
+        const wall = this.barricadeAhead(e);
+        if (wall && e.d + speed * dt >= wall.d - TRAP_CONFIG.blockGap) {
+          e.d = Math.max(e.d, wall.d - TRAP_CONFIG.blockGap);
+          blockedBy = wall.trap;
+        } else e.d += speed * dt;
         const path = this.map.paths[e.pathIdx];
         if (e.d >= path.length - 1) {
           s.baseHp -= def.leak;
@@ -364,7 +374,14 @@ export class Game {
 
       // Attaque : le héros s'il est à portée, sinon la tour active la plus proche.
       e.atkCd -= dt;
-      if (e.atkCd <= 0) {
+      if (blockedBy && e.atkCd <= 0) {
+        e.atkCd = def.attackCooldown;
+        if (def.blast) {
+          this.explode(e, def.blast);
+          blockedBy.hp = Math.max(0, blockedBy.hp - e.attack * 3);
+        } else blockedBy.hp = Math.max(0, blockedBy.hp - Math.max(4, e.attack));
+        this.emit({ t: 'hit', x: blockedBy.x, y: blockedBy.y, target: 'tower' });
+      } else if (e.atkCd <= 0) {
         if (target === undefined) target = this.findTarget(e, def.attackRange);
         if (target) {
           e.atkCd = def.attackCooldown;
@@ -397,6 +414,70 @@ export class Game {
       }
     }
     s.enemies = s.enemies.filter((e) => e.hp > 0);
+  }
+
+  // ------------------------------------------------------------------ pièges
+
+  /** Position (index le long de chaque chemin) des cases piégées, calculée à la demande. */
+  private trapIdx = new Map<number, number[]>();
+  private trapPathIndex(t: TrapState): number[] {
+    let idx = this.trapIdx.get(t.id);
+    if (!idx) {
+      idx = this.map.paths.map((p) => p.findIndex((q) => q.x === t.x && q.y === t.y));
+      this.trapIdx.set(t.id, idx);
+    }
+    return idx;
+  }
+
+  /** Barricade active la plus proche devant l'ennemi sur son chemin. */
+  private barricadeAhead(e: EnemyState): { trap: TrapState; d: number } | null {
+    let best: { trap: TrapState; d: number } | null = null;
+    for (const t of this.state.traps) {
+      if (t.type !== 'barricade' || t.built < 1 || t.hp <= 0) continue;
+      const d = this.trapPathIndex(t)[e.pathIdx];
+      if (d < 0 || d <= e.d - 0.2) continue;
+      if (!best || d < best.d) best = { trap: t, d };
+    }
+    return best;
+  }
+
+  /** Une case du chemin où l'on peut poser un piège (ni trop près de l'entrée ou de la base, ni déjà occupée). */
+  trapCellOk(x: number, y: number): boolean {
+    if (this.map.terrain[y * this.map.width + x] !== 'path') return false;
+    if (this.state.traps.some((t) => t.x === x && t.y === y)) return false;
+    for (const p of this.map.paths) {
+      const i = p.findIndex((q) => q.x === x && q.y === y);
+      if (i >= 0 && (i < TRAP_CONFIG.edgeCells || i >= p.length - 1 - TRAP_CONFIG.edgeCells)) return false;
+    }
+    return true;
+  }
+
+  /** Mines et pieux. */
+  private updateTraps(dt: number) {
+    const s = this.state;
+    for (const t of s.traps) {
+      if (t.built < 1 || t.hp <= 0) continue;
+      const def = TRAPS[t.type];
+      if (t.type === 'mine') {
+        if (!s.enemies.some((e) => e.hp > 0 && dist(e.x, e.y, t.x, t.y) <= 0.6)) continue;
+        const dmg = trapDamage(def, s.wave);
+        for (const e of s.enemies) if (e.hp > 0 && dist(e.x, e.y, t.x, t.y) <= def.radius) this.damageEnemy(e, dmg, false, 'piege');
+        t.hp = 0;
+        this.emit({ t: 'blast', x: t.x, y: t.y, radius: def.radius });
+      } else if (t.type === 'pieux') {
+        let n = 0;
+        for (const e of s.enemies) {
+          if (e.hp <= 0 || dist(e.x, e.y, t.x, t.y) > def.radius) continue;
+          n++;
+          this.damageEnemy(e, trapDamage(def, s.wave) * dt, false, 'piege');
+          if (e.slowFor <= 0 || def.slow >= e.slowFactor) {
+            e.slowFactor = def.slow;
+            e.slowFor = 0.3;
+          }
+        }
+        if (n > 0) t.hp = Math.max(0, t.hp - dt * Math.min(3, n));
+      }
+    }
   }
 
   /** Cible d'un ennemi : le héros s'il est à portée, sinon la tour active la plus proche. */
@@ -822,6 +903,40 @@ export class Game {
         }
         break;
       }
+      case 'trap': {
+        // Construire, réparer (barricade) ou réarmer un piège.
+        const t = s.traps.find((q) => q.id === task.trapId);
+        if (!t) return done();
+        const def = TRAPS[t.type];
+        if (t.built >= 1 && t.hp >= t.maxHp) return done();
+        if (!this.moveHero(t.x, t.y, 0.7, dt)) {
+          hero.progress = 0;
+          break;
+        }
+        if (t.built < 1) {
+          t.built = Math.min(1, t.built + dt / def.buildTime);
+          hero.progress = t.built;
+          if (t.built >= 1) {
+            t.hp = t.maxHp;
+            done();
+          }
+        } else if (t.hp <= 0) {
+          hero.progress += dt / def.buildTime;
+          if (hero.progress >= 1) {
+            const cost = Math.ceil(def.cost * def.rearmRatio);
+            if (s.scrap >= cost) {
+              s.scrap -= cost;
+              s.stats.spent += cost;
+              t.hp = t.maxHp;
+            } else this.emit({ t: 'msg', from: 'jeu', text: `Pas assez de ressources pour réarmer (${cost}).` });
+            done();
+          }
+        } else {
+          t.hp = Math.min(t.maxHp, t.hp + (t.maxHp / (def.buildTime * 2)) * dt);
+          hero.progress = t.hp / t.maxHp;
+        }
+        break;
+      }
       case 'repair':
       case 'reload':
       case 'recycle': {
@@ -936,6 +1051,9 @@ export class Game {
         case 'collect':
           if (!s.pickups.some((p) => p.id === task.pickupId)) return 'Plus rien à ramasser.';
           break;
+        case 'trap':
+          if (!s.traps.some((t) => t.id === task.trapId)) return 'Piège introuvable.';
+          break;
       }
       this.setHeroTask(task);
       return null;
@@ -1010,6 +1128,24 @@ export class Game {
         t.y = slot.y;
         t.facing = bestFacing(this.map, baseTowerStats(t), slot.x, slot.y, slot.high);
         t.disabledFor = G.moveDisable;
+        return null;
+      }
+      case 'trap': {
+        const def = TRAPS[cmd.type];
+        if (!def || !Number.isInteger(cmd.x) || !Number.isInteger(cmd.y)) return 'Piège invalide.';
+        if (!this.trapCellOk(cmd.x, cmd.y)) return 'Impossible de poser un piège ici.';
+        if (s.traps.length >= TRAP_CONFIG.maxTraps) return `Au plus ${TRAP_CONFIG.maxTraps} pièges.`;
+        if (!pay(def.cost)) return poor;
+        s.traps.push({ id: this.nextId++, type: def.id, x: cmd.x, y: cmd.y, built: 0, hp: 0, maxHp: def.hp, invested: def.cost });
+        return null;
+      }
+      case 'removeTrap': {
+        const i = s.traps.findIndex((t) => t.id === cmd.trapId);
+        if (i < 0) return 'Piège introuvable.';
+        const t = s.traps[i];
+        s.scrap += Math.floor(t.invested * (t.built >= 1 ? TRAP_CONFIG.sellRatio : 1));
+        s.traps.splice(i, 1);
+        this.trapIdx.delete(t.id);
         return null;
       }
       case 'rotate': {

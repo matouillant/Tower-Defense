@@ -8,6 +8,10 @@ import {
   GameMap,
   GameState,
   HERO_NODES,
+  TRAPS,
+  TRAP_CONFIG,
+  TrapState,
+  TrapTypeId,
   DIFFICULTIES,
   Difficulty,
   SimSave,
@@ -58,7 +62,7 @@ let state: GameState | null = null;
 let scene: GameScene | null = null;
 let online = true;
 /** Ce que montre le panneau contextuel. */
-let panel: { kind: 'tower'; id: number } | { kind: 'slot'; id: number } | { kind: 'deposit'; id: number } | { kind: 'heroTree' } | { kind: 'menu' } | null = null;
+let panel: { kind: 'tower'; id: number } | { kind: 'slot'; id: number } | { kind: 'deposit'; id: number } | { kind: 'trap'; id: number } | { kind: 'path'; x: number; y: number } | { kind: 'heroTree' } | { kind: 'menu' } | null = null;
 /** Tour en cours de déplacement : le prochain emplacement libre touché la reçoit. */
 let movingTower: number | null = null;
 let aiPanelOpen = false;
@@ -442,8 +446,9 @@ function select(next: typeof panel) {
   if (scene) {
     scene.selectedTower = next?.kind === 'tower' ? next.id : null;
     scene.selectedSlot = next?.kind === 'slot' ? next.id : null;
+    scene.selectedCell = next?.kind === 'path' ? { x: next.x, y: next.y } : next?.kind === 'trap' ? (state?.traps.find((t) => t.id === next.id) ?? null) : null;
     // Sur petit écran, on décale la carte pour que la cible ne soit pas cachée par le panneau.
-    const target = next?.kind === 'tower' ? state?.towers.find((t) => t.id === next.id) : next?.kind === 'slot' ? map?.slots[next.id] : next?.kind === 'deposit' ? map?.deposits[next.id] : null;
+    const target = next?.kind === 'tower' ? state?.towers.find((t) => t.id === next.id) : next?.kind === 'slot' ? map?.slots[next.id] : next?.kind === 'deposit' ? map?.deposits[next.id] : next?.kind === 'path' ? next : next?.kind === 'trap' ? state?.traps.find((t) => t.id === next.id) : null;
     if (target) {
       if (SIDE_SHEET.matches) scene.focusOn(target.x, target.y, 0.22, 0);
       else if (BOTTOM_SHEET.matches) scene.focusOn(target.x, target.y, 0, 0.22);
@@ -468,12 +473,12 @@ function onTap(tap: Tap, x: number, y: number) {
       movingTower = null;
       return select(null);
     }
-    if (tap.kind === 'tower' || tap.kind === 'slot') return select(tap);
+    if (tap.kind === 'tower' || tap.kind === 'slot' || tap.kind === 'trap' || tap.kind === 'path') return select(tap);
     if (tap.kind === 'deposit' && state.heroController === 'ai') return select(tap);
     return select(null);
   }
   if (role === 'hero') {
-    if (tap.kind === 'tower') return select(tap);
+    if (tap.kind === 'tower' || tap.kind === 'trap') return select(tap);
     select(null);
     if (tap.kind === 'deposit') cmd({ c: 'task', task: { kind: 'harvest', depositId: tap.id } });
     else if (tap.kind === 'prospect') cmd({ c: 'task', task: { kind: 'prospect', zoneId: tap.id } });
@@ -832,11 +837,45 @@ function renderPanel(s: GameState) {
   } else if (panel?.kind === 'deposit') {
     html = `<div class="panel-head"><h3>Gisement (${s.deposits[panel.id]} restant)</h3><button data-act="close">✕</button></div>
       <button data-act="orderHarvest" ${s.ai.orderCooldown > 0 || s.deposits[panel.id] <= 0 ? 'disabled' : ''}>Ordre à l'IA : récolte ici</button>`;
+  } else if (panel?.kind === 'path' && role === 'strategist') html = trapBuildPanel(s);
+  else if (panel?.kind === 'trap') {
+    const pid = panel.id;
+    const t = s.traps.find((q) => q.id === pid);
+    html = t ? trapPanel(s, t) : '';
+    if (!t) panel = null;
   } else if (panel?.kind === 'heroTree') html = heroTreePanel(s);
   else if (panel?.kind === 'menu') html = menuPanel(s);
   if (movingTower !== null) html = `<div class="panel-head"><h3>Touche un emplacement libre pour y déplacer la tour</h3><button data-act="close">✕</button></div>`;
   el.hidden = html === '' || aiPanelOpen;
   render(el, html);
+}
+
+/** Pièges : choix sur une case du chemin (stratège). */
+function trapBuildPanel(s: GameState): string {
+  const head = `<div class="panel-head"><h3>Piège sur le chemin</h3><button data-act="close">✕</button></div>`;
+  const ok = s.traps.length < TRAP_CONFIG.maxTraps;
+  const cards = (Object.keys(TRAPS) as TrapTypeId[])
+    .map((id) => {
+      const d = TRAPS[id];
+      const poor = s.scrap < d.cost;
+      return `<button class="up" data-act="buildTrap" data-id="${id}" ${poor || !ok ? 'disabled' : ''}><span class="uphead"><b>${d.name}</b><em class="${poor ? 'poor' : ''}">${d.cost}</em></span><small>${d.desc}</small>${poor ? `<small class="need">Il manque ${Math.ceil(d.cost - s.scrap)}</small>` : ''}</button>`;
+    })
+    .join('');
+  return `${head}<div class="hint">Le héros (ou l'IA) va le construire sur place. ${s.traps.length}/${TRAP_CONFIG.maxTraps} pièges.</div><div class="ups">${cards}</div>
+`;
+}
+
+function trapPanel(s: GameState, t: TrapState): string {
+  const d = TRAPS[t.type];
+  const status = t.built < 1 ? `En attente de construction · ${Math.round(t.built * 100)} %` : t.hp <= 0 ? 'Épuisé : le héros doit le réarmer' : t.type === 'barricade' ? `${Math.ceil(t.hp)}/${t.maxHp} PV` : t.type === 'pieux' ? `Usure : ${Math.round((1 - t.hp / t.maxHp) * 100)} %` : 'Armée';
+  const rearm = Math.ceil(d.cost * d.rearmRatio);
+  const refund = Math.floor(t.invested * (t.built >= 1 ? TRAP_CONFIG.sellRatio : 1));
+  const heroBtn = role === 'hero' && (t.built < 1 || t.hp < t.maxHp)
+    ? `<button class="primary" data-act="workTrap">${t.built < 1 ? 'Construire' : t.hp <= 0 ? `Réarmer (${rearm})` : 'Réparer'}</button>`
+    : '';
+  return `<div class="panel-head"><h3>${d.name}</h3><button data-act="close">✕</button></div>
+    <div class="muted small">${d.desc}</div><div class="tiles">${statTile(status, 'état')}</div>${heroBtn}
+    ${role === 'strategist' ? `<div class="chips"><button class="danger" data-act="removeTrap">Démonter (+${refund})</button></div><small>Réarmement : ${rearm} ressources, par le héros.</small>` : ''}`;
 }
 
 /** Panneau de commandement de l'IA. Construit une seule fois pour ne pas gêner les curseurs. */
@@ -1037,6 +1076,15 @@ $('game').addEventListener('pointerdown', (ev) => {
         scene.applyFxQuality();
       }
       break;
+    case 'buildTrap':
+      if (panel?.kind === 'path') cmd({ c: 'trap', x: panel.x, y: panel.y, type: id as TrapTypeId });
+      return select(null);
+    case 'removeTrap':
+      if (panel?.kind === 'trap') cmd({ c: 'removeTrap', trapId: panel.id });
+      return select(null);
+    case 'workTrap':
+      if (panel?.kind === 'trap') cmd({ c: 'task', task: { kind: 'trap', trapId: panel.id } });
+      return select(null);
     case 'shareSummary': {
       const text = summaryText(state);
       (navigator.share ? navigator.share({ title: 'Boulon & le Dôme', text }) : navigator.clipboard.writeText(text).then(() => toast('Bilan copié.'))).catch(() => toast(text));

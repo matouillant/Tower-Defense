@@ -1,6 +1,7 @@
 import type { Difficulty, EnemyTypeId } from '../config/enemies';
 import type { AbilityId, RewardId } from '../config/game';
 import type { TowerTypeId } from '../config/towers';
+import type { TrapTypeId } from '../config/traps';
 
 export type Role = 'strategist' | 'hero';
 export type Phase = 'prep' | 'wave' | 'inter' | 'over';
@@ -65,6 +66,21 @@ export interface EnemyState {
   dotSrc: number;
 }
 
+export interface TrapState {
+  id: number;
+  type: TrapTypeId;
+  /** Case du chemin (entiers). */
+  x: number;
+  y: number;
+  /** Avancement de la construction par le héros (0..1) ; actif à 1. */
+  built: number;
+  /** Barricade : PV ; mine : charge ; pieux : durée de contact restante. 0 = à réarmer. */
+  hp: number;
+  maxHp: number;
+  /** Ce qu'a coûté le piège (pour la revente). */
+  invested: number;
+}
+
 export interface PickupState {
   id: number;
   x: number;
@@ -82,6 +98,7 @@ export type HeroTask =
   | { kind: 'harvest'; depositId: number }
   | { kind: 'prospect'; zoneId: number }
   | { kind: 'collect'; pickupId: number }
+  | { kind: 'trap'; trapId: number }
   | { kind: 'deliver' };
 
 export interface HeroState {
@@ -134,6 +151,7 @@ export interface GameState {
   towers: TowerState[];
   enemies: EnemyState[];
   pickups: PickupState[];
+  traps: TrapState[];
   hero: HeroState;
   /** Stock restant de chaque gisement (même ordre que map.deposits). */
   deposits: number[];
@@ -194,6 +212,8 @@ export type StrategistCommand =
   | { c: 'moveTower'; towerId: number; slotId: number }
   | { c: 'targeting'; towerId: number; mode: Targeting }
   | { c: 'rotate'; towerId: number; facing: number }
+  | { c: 'trap'; x: number; y: number; type: TrapTypeId }
+  | { c: 'removeTrap'; trapId: number }
   | { c: 'ability'; id: AbilityId; x?: number; y?: number; towerId?: number }
   | { c: 'aiSettings'; settings: Partial<AiSettings> }
   | { c: 'aiPriority'; towerId: number; priority: AiPriority }

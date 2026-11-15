@@ -15,6 +15,8 @@ export type Tap =
   | { kind: 'slot'; id: number }
   | { kind: 'deposit'; id: number }
   | { kind: 'prospect'; id: number }
+  | { kind: 'trap'; id: number }
+  | { kind: 'path'; x: number; y: number }
   | { kind: 'ground'; x: number; y: number };
 
 const INK = 0x2a2344;
@@ -86,6 +88,8 @@ export class GameScene extends Phaser.Scene {
   onTap: (tap: Tap, x: number, y: number) => void = () => {};
   selectedTower: number | null = null;
   selectedSlot: number | null = null;
+  /** Case du chemin ou piège sélectionné. */
+  selectedCell: { x: number; y: number } | null = null;
   /** Aperçu de portée (en cases) d'une tour qu'on envisage de poser sur l'emplacement sélectionné. */
   previewType: TowerTypeId | null = null;
   /** Compétence de zone armée : le prochain appui sur la carte la lance. */
@@ -319,7 +323,12 @@ export class GameScene extends Phaser.Scene {
     if (dep) return { kind: 'deposit', id: dep.id };
     const zone = near(this.map.prospectZones, 0.5);
     if (zone) return { kind: 'prospect', id: zone.id };
-    return { kind: 'ground', x: Math.round(x), y: Math.round(y) };
+    const trap = near(s.traps ?? [], 0.5);
+    if (trap) return { kind: 'trap', id: trap.id };
+    const cx = Math.round(x);
+    const cy = Math.round(y);
+    if (cx >= 0 && cy >= 0 && cx < this.map.width && cy < this.map.height && this.map.terrain[cy * this.map.width + cx] === 'path') return { kind: 'path', x: cx, y: cy };
+    return { kind: 'ground', x: cx, y: cy };
   }
 
   // ------------------------------------------------------------------ décor
@@ -525,6 +534,57 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** Pièges : plan bleu en pointillés tant qu'ils ne sont pas construits, grisés une fois épuisés. */
+  private drawTrap(tr: GameState['traps'][number], t: number) {
+    const u = this.under!;
+    const g = this.ui!;
+    const x = px(tr.x);
+    const y = px(tr.y);
+    const h = TILE * 0.42;
+    if (tr.built < 1) {
+      u.fillStyle(0x35e0ff, 0.12).fillRoundedRect(x - h, y - h, h * 2, h * 2, 6);
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + t * 0.6;
+        u.lineStyle(2.5, 0x35e0ff, 0.9).beginPath().arc(x, y, h, a, a + 0.45).strokePath();
+      }
+      if (tr.built > 0) {
+        g.lineStyle(7, INK).beginPath().arc(x, y, h + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * tr.built).strokePath();
+        g.lineStyle(3.5, 0x35e0ff).beginPath().arc(x, y, h + 6, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * tr.built).strokePath();
+      }
+      return;
+    }
+    const spent = tr.hp <= 0;
+    if (tr.type === 'barricade') {
+      const col = spent ? 0x55596a : 0xb07a45;
+      u.fillStyle(INK, 1).fillRoundedRect(x - h - 3, y - h * 0.75 - 3, h * 2 + 6, h * 1.5 + 6, 6);
+      for (let i = 0; i < 3; i++) u.fillStyle(i % 2 ? col : Phaser.Display.Color.ValueToColor(col).darken(15).color, 1).fillRect(x - h, y - h * 0.75 + i * h * 0.5, h * 2, h * 0.5 - 2);
+      u.lineStyle(4, 0xc4cee8, 1).lineBetween(x - h, y - h * 0.6, x + h, y + h * 0.6).lineBetween(x - h, y + h * 0.6, x + h, y - h * 0.6);
+      if (!spent && tr.hp < tr.maxHp) this.bar(g, x, y - h - 10, TILE * 0.8, 5, tr.hp / tr.maxHp, 0xffd84a);
+    } else if (tr.type === 'mine') {
+      u.fillStyle(INK, 1).fillCircle(x, y, h * 0.8);
+      u.fillStyle(spent ? 0x55596a : 0x6b78a0, 1).fillCircle(x, y, h * 0.65);
+      const blink = !spent && Math.sin(t * 6 + tr.id) > 0;
+      u.fillStyle(blink ? 0xff3b3b : 0x5a1f2a, 1).fillCircle(x, y, h * 0.25);
+      if (blink) u.fillStyle(0xff3b3b, 0.3).fillCircle(x, y, h * 0.5);
+    } else {
+      const col = spent ? 0x55596a : 0xd8e0f0;
+      u.fillStyle(INK, 0.6).fillRoundedRect(x - h, y - h, h * 2, h * 2, 6);
+      for (let i = 0; i < 3; i++)
+        for (let j = 0; j < 3; j++) {
+          const cx = x - h * 0.66 + i * h * 0.66;
+          const cy = y - h * 0.66 + j * h * 0.66;
+          u.fillStyle(INK, 1).fillTriangle(cx - 6, cy + 5, cx + 6, cy + 5, cx, cy - 8);
+          u.fillStyle(col, 1).fillTriangle(cx - 4, cy + 3.5, cx + 4, cy + 3.5, cx, cy - 5.5);
+        }
+      if (!spent) this.bar(g, x, y - h - 8, TILE * 0.7, 4, tr.hp / tr.maxHp, 0xc4cee8);
+    }
+    if (spent) {
+      g.fillStyle(0xff5d5d, 1).fillCircle(x + h * 0.7, y - h * 0.7, 8);
+      g.lineStyle(2.5, 0xffffff).lineBetween(x + h * 0.7, y - h * 0.7 - 4.5, x + h * 0.7, y - h * 0.7 + 1.5);
+      g.fillStyle(0xffffff).fillCircle(x + h * 0.7, y - h * 0.7 + 4, 1.4);
+    }
+  }
+
   private bar(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number, frac: number, color: number) {
     g.fillStyle(INK).fillRoundedRect(x - w / 2 - 2, y - 2, w + 4, h + 4, (h + 4) / 2);
     const fw = Math.max(0, Math.min(1, frac)) * w;
@@ -684,6 +744,14 @@ export class GameScene extends Phaser.Scene {
       this.towers.delete(id);
     }
 
+    // ---- pièges (sous les ennemis)
+    for (const tr of s.traps ?? []) this.drawTrap(tr, t);
+    if (this.selectedCell) {
+      const c = this.selectedCell;
+      g.lineStyle(6, INK, 0.8).strokeRoundedRect(px(c.x) - TILE / 2, px(c.y) - TILE / 2, TILE, TILE, 8);
+      g.lineStyle(3, 0xffffff, 0.95).strokeRoundedRect(px(c.x) - TILE / 2, px(c.y) - TILE / 2, TILE, TILE, 8);
+    }
+
     // ---- ennemis
     const prevEnemies = new Map(this.prev?.enemies.map((e) => [e.id, e]));
     const seenEnemies = new Set<number>();
@@ -713,12 +781,14 @@ export class GameScene extends Phaser.Scene {
       if (!hpTrack) this.enemyHp.set(e.id, (hpTrack = { hp: e.hp + e.shield, flash: 0, acc: 0, accAt: t }));
       const total = e.hp + e.shield;
       if (total < hpTrack.hp - 0.01) {
-        hpTrack.acc += hpTrack.hp - total;
-        hpTrack.flash = 0.09;
+        const hit = hpTrack.hp - total;
+        hpTrack.acc += hit;
+        // Les petits dégâts continus (brûlure, pieux) ne font pas clignoter : seul un vrai coup flashe.
+        if (hit >= Math.max(5, e.maxHp * 0.04)) hpTrack.flash = 0.09;
       }
       hpTrack.hp = total;
-      if (hpTrack.acc > 0 && (t - hpTrack.accAt > 0.3 || e.hp <= 0)) {
-        if (hpTrack.acc >= 1) this.effects?.number(x, y - size * 0.5, String(Math.round(hpTrack.acc)), boss ? '#ffd84a' : '#ffffff', hpTrack.acc >= 100);
+      if (hpTrack.acc > 0 && t - hpTrack.accAt > 0.45) {
+        if (hpTrack.acc >= 6) this.effects?.number(x, y - size * 0.5, String(Math.round(hpTrack.acc)), boss ? '#ffd84a' : '#ffffff', hpTrack.acc >= 100);
         hpTrack.acc = 0;
         hpTrack.accAt = t;
       }

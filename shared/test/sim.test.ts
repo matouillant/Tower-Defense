@@ -511,3 +511,55 @@ describe('bilan de partie', () => {
     expect(st.baseHpByWave.length).toBeGreaterThan(0);
   });
 });
+
+describe('pièges', () => {
+    const addEnemy = (game: Game, type: EnemyTypeId, d: number, hp?: number) => {
+      const path = game.map.paths[0];
+      const def = ENEMIES[type];
+      const i = Math.min(path.length - 2, Math.floor(d));
+      const e = {
+        id: 9000 + game.state.enemies.length, type, pathIdx: 0, d, x: path[i].x, y: path[i].y,
+        hp: hp ?? def.hp, maxHp: hp ?? def.hp, shield: def.shield, attack: def.attack, bounty: def.bounty,
+        slowFor: 0, slowFactor: 0, dotFor: 0, dotDps: 0, atkCd: 0, spawnCd: def.heals?.every ?? def.spawnEvery ?? 0, halted: 0, dotSrc: 0,
+      };
+      game.state.enemies.push(e);
+      return e;
+    };
+  const pathCell = (game: Game) => {
+    const p = game.map.paths[0];
+    for (let i = 3; i < p.length - 3; i++) if (game.trapCellOk(p[i].x, p[i].y)) return { ...p[i], i };
+    throw new Error('aucune case');
+  };
+  it('le stratège pose, l’IA construit, la barricade arrête les ennemis', () => {
+    const game = new Game(generateMap(5), 'normal');
+    game.state.scrap = 1000;
+    const c = pathCell(game);
+    expect(game.apply('strategist', { c: 'trap', x: c.x, y: c.y, type: 'barricade' })).toBeNull();
+    expect(game.apply('strategist', { c: 'trap', x: c.x, y: c.y, type: 'mine' })).toBeTruthy(); // case occupée
+    const trap = game.state.traps[0];
+    for (let i = 0; i < 20 * 60 && trap.built < 1; i++) game.step(DT);
+    expect(trap.built).toBe(1);
+    expect(trap.hp).toBe(trap.maxHp);
+    // Un ennemi placé avant la barricade ne la dépasse pas tant qu'elle tient.
+    const e = addEnemy(game, 'grunt', c.i - 2, 99999);
+    game.state.phase = 'wave';
+    for (let i = 0; i < 20 * 8; i++) game.step(DT);
+    expect(e.d).toBeLessThan(c.i);
+    expect(trap.hp).toBeLessThan(trap.maxHp);
+  });
+  it('la mine explose une fois puis doit être réarmée', () => {
+    const game = new Game(generateMap(5), 'normal');
+    game.state.scrap = 1000;
+    const c = pathCell(game);
+    game.apply('strategist', { c: 'trap', x: c.x, y: c.y, type: 'mine' });
+    const trap = game.state.traps[0];
+    trap.built = 1;
+    trap.hp = 1;
+    const e = addEnemy(game, 'grunt', c.i - 1, 40);
+    game.state.phase = 'wave';
+    for (let i = 0; i < 40 && trap.hp > 0; i++) game.step(DT);
+    expect(trap.hp).toBe(0);
+    expect(e.hp).toBeLessThanOrEqual(0);
+    expect(game.state.stats.bySource.piege?.kills).toBe(1);
+  });
+});
