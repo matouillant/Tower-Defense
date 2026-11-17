@@ -137,7 +137,10 @@ const confirmLabel = (act: string, label: string) => (confirming?.act === act ? 
 
 let lastToast = '';
 let lastToastAt = 0;
-const SMALL_SCREEN = window.matchMedia('(max-width: 700px)');
+/** Téléphone, en portrait comme en paysage (écran étroit ou peu haut). */
+const SMALL_SCREEN = window.matchMedia('(max-width: 700px), (max-height: 520px)');
+// Rotation du téléphone : on réaffiche la barre et le bouton de lancement au bon endroit.
+SMALL_SCREEN.addEventListener('change', () => state && renderGame());
 function toast(text: string, cls = '') {
   // Pas de doublon rapproché, et au plus deux messages à l'écran.
   const now = performance.now();

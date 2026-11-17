@@ -365,7 +365,7 @@ button.mission.on { background: #12304a; color: #fff; }
 }
 
 /* ---- Téléphone : messages discrets en bas, au-dessus de la barre, sous les panneaux ---- */
-@media (max-width: 700px) {
+@media (max-width: 700px), (max-height: 520px) {
   #toasts { top: auto; bottom: calc(64px + env(safe-area-inset-bottom)); padding: 0; z-index: 4; }
   #toasts .toast, #toasts .toast.info { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 94vw; font-size: 12px; padding: 3px 10px; border-radius: 8px; opacity: 0.92; text-align: left; }
   #ai-say { bottom: 34px; }
