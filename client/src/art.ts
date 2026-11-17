@@ -63,6 +63,13 @@ export const ART: Record<string, { url: string; size: number }> = {
   depot: { url: depot, size: 256 },
 };
 
+// Versions améliorées (niveaux 2 à 4 des tourelles, niveaux 2 et 3 du héros) : fichiers « nom_N.svg ».
+const TIERS = import.meta.glob('./art/*_[234].svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+for (const [path, url] of Object.entries(TIERS)) ART[path.slice(6, -4)] = { url, size: 256 };
+
+/** Clé d'image selon le niveau (1 = image de base) ; retombe sur l'image de base si la variante n'existe pas. */
+export const tierKey = (key: string, level: number) => (level > 1 && ART[`${key}_${Math.min(level, 4)}`] ? `${key}_${Math.min(level, 4)}` : key);
+
 /** Tours sans tête pivotante : une seule image, qui pulse doucement. */
 export const HEADLESS_TOWERS = new Set(['givre', 'foudre', 'relais', 'depot']);
 /** Image de la tour dans les menus. */

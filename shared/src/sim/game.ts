@@ -1214,30 +1214,9 @@ export class Game {
         t.targeting = cmd.mode;
         return null;
       }
-      case 'ability': {
-        const def = ABILITIES[cmd.id];
-        if (!def) return 'Compétence inconnue.';
-        if (s.abilities[cmd.id] > 0) return 'Compétence en recharge.';
-        if (cmd.id === 'surcharge') {
-          const t = cmd.towerId !== undefined ? tower(cmd.towerId) : undefined;
-          if (!t || t.hp <= 0) return 'Choisis une tour active.';
-          t.overchargeFor = def.duration;
-          this.emit({ t: 'ability', id: cmd.id, x: t.x, y: t.y, radius: 0.6 });
-        } else {
-          if (typeof cmd.x !== 'number' || typeof cmd.y !== 'number' || !Number.isFinite(cmd.x + cmd.y)) return 'Choisis une zone.';
-          const { x, y } = cmd as { x: number; y: number };
-          for (const e of s.enemies) {
-            if (dist(e.x, e.y, x, y) > def.radius) continue;
-            if (cmd.id === 'ralentir') {
-              e.slowFactor = Math.max(e.slowFor > 0 ? e.slowFactor : 0, def.power);
-              e.slowFor = Math.max(e.slowFor, def.duration);
-            } else this.damageEnemy(e, def.power + def.powerPerWave * s.wave, false);
-          }
-          this.emit({ t: 'ability', id: cmd.id, x, y, radius: def.radius });
-        }
-        s.abilities[cmd.id] = def.cooldown * s.cooldownMult;
-        return null;
-      }
+      case 'ability':
+        // Les compétences du stratège (ralentir, foudre, surcharge) ont été retirées du jeu.
+        return 'Les compétences ne sont plus disponibles.';
       case 'aiSettings': {
         const n = cmd.settings ?? {};
         const clamp = (v: unknown, lo: number, hi: number, fallback: number) =>

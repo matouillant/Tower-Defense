@@ -1,6 +1,4 @@
 import {
-  ABILITIES,
-  AbilityId,
   Command,
   ENEMIES,
   GAME_CONFIG as G,
@@ -538,11 +536,6 @@ function select(next: typeof panel) {
 function onTap(tap: Tap, x: number, y: number) {
   if (!state || !map || state.phase === 'over') return;
   if (role === 'strategist') {
-    if (scene?.armed) {
-      cmd({ c: 'ability', id: scene.armed, x, y });
-      scene.armed = null;
-      return renderGame();
-    }
     if (movingTower !== null) {
       if (tap.kind === 'slot') cmd({ c: 'moveTower', towerId: movingTower, slotId: tap.id });
       else toast('Déplacement annulé.');
@@ -633,11 +626,6 @@ function renderGame() {
 function renderBar(s: GameState) {
   let html = '';
   if (role === 'strategist') {
-    for (const id of Object.keys(ABILITIES) as AbilityId[]) {
-      const cd = s.abilities[id];
-      const needsTower = id === 'surcharge' && panel?.kind !== 'tower';
-      html += `<button data-act="ability" data-id="${id}" class="${scene?.armed === id ? 'on' : ''}" ${cd > 0 || needsTower ? 'disabled' : ''}>${ABILITIES[id].name}${cd > 0 ? ` ${Math.ceil(cd)}s` : ''}</button>`;
-    }
     if (s.heroController === 'ai') html += `<button data-act="ai" class="${aiPanelOpen ? 'on' : ''}">Piloter l'IA</button>`;
   } else if (role === 'hero') {
     html += `<button data-act="deliver">Rentrer à la base</button><button data-act="stop">Stop</button><button data-act="heroTree">Améliorations</button>`;
@@ -1117,13 +1105,6 @@ $('game').addEventListener('pointerdown', (ev) => {
       net.send({ m: 'speed', speed: SPEEDS[(SPEEDS.indexOf(mine) + 1) % SPEEDS.length] });
       break;
     }
-    case 'ability':
-      if (id === 'surcharge') cmd({ c: 'ability', id, towerId });
-      else if (scene) {
-        scene.armed = scene.armed === id ? null : (id as AbilityId);
-        if (scene.armed) toast('Touche la carte pour viser.');
-      }
-      break;
     case 'ai': aiPanelOpen = !aiPanelOpen; break;
     case 'overview': scene?.toggleOverview(); break;
     case 'menu': return select(panel?.kind === 'menu' ? null : { kind: 'menu' });

@@ -106,7 +106,9 @@ export class Effects {
 
   /** Chiffre flottant (dégâts infligés, gains). */
   number(x: number, y: number, value: string, color: string, big = false) {
-    if (this.live.length > (this.quality === 'high' ? 36 : 14)) return;
+    if (this.live.length > (this.quality === 'high' ? 24 : 10)) return;
+    // Pas d'empilement illisible : un seul chiffre à la fois dans un même coin de carte.
+    if (this.live.some((n) => Math.abs(n.txt.x - x) < 34 && Math.abs(n.txt.y - y) < 30)) return;
     const txt =
       this.numbers.pop() ??
       this.scene.add.text(0, 0, '', { fontFamily: 'Exo 2, system-ui, sans-serif', fontStyle: '800', fontSize: '22px', stroke: '#0d1220', strokeThickness: 5 }).setOrigin(0.5).setDepth(7000);

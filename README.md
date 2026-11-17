@@ -4,7 +4,7 @@ Tower defense coopératif de science-fiction, vu de dessus.
 
 Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur et mobile).
 
-- **Stratège** : pose les tours, choisit leurs voies d'amélioration, lance des compétences, pilote l'IA.
+- **Stratège** : pose les tours, choisit leurs voies d'amélioration et les pièges, pilote l'IA.
 - **Héros-réparateur** : répare, ramasse, récolte, recharge, recycle. Joué par un humain **ou par l'IA**.
 - **Une seule ressource** pour construire, améliorer et réparer.
 - **Cartes aléatoires** à partir d'une seed, **vagues infinies**, un boss toutes les 10 vagues.
@@ -15,6 +15,7 @@ Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur e
 - **Pièges** : barricade, mine et pieux posés sur le chemin par le stratège, construits, réparés et réarmés par le héros (ou l'IA).
 - **Bilan de fin de partie** : meilleure tour, dégâts par source, courbe des PV de la base, partage.
 - **Son et musique** synthétisés dans le navigateur (aucun fichier), musique qui suit l'intensité de la partie ; effets visuels (éclat, particules, chiffres de dégâts, tremblements) réglables dans le menu.
+- **Tourelles, héros et ennemis plus expressifs** : chaque niveau d'amélioration change l'apparence de la tourelle (blindage, canons, bobines, dorures au niveau 4), le héros s'équipe au fil de ses améliorations, les ennemis se dandinent, givrent ou brûlent, et une aura signale boss et élites quand la menace monte. Les compétences du stratège (ralentir, foudre, surcharge) ont été retirées.
 - **Directeur de menace** : tant que la défense ne laisse rien approcher, les vagues suivantes grossissent (affiché « ☠ ×1,4 » dans le bandeau) ; quand la base encaisse, la pression redescend, jamais sous le plancher du niveau choisi.
 - **4 biomes** selon la carte (prairie alien, désert, toundra, volcan) : sol nuancé, route continue aux bords lumineux, lisière de végétation, halos, ombres de nuages et poussières en suspension.
 - **3 niveaux de difficulté** (Normal, Difficile par défaut, Cauchemar), choisis par le stratège dans le salon ou pour la partie suivante.
@@ -76,7 +77,7 @@ Tout se règle dans `shared/src/config/`, sans toucher au code :
 | --- | --- |
 | `towers.ts` | Tours, arbres d'amélioration à branches exclusives, synergies |
 | `enemies.ts` | Ennemis, boss, formules de montée en puissance des vagues |
-| `game.ts` | Économie, réparation et usure, héros et son arbre, compétences, récompenses |
+| `game.ts` | Économie, réparation et usure, héros et son arbre, pièges, récompenses |
 | `map.ts` | Taille de carte, chemins, emplacements, gisements, critères de validité |
 | `sim/ai.ts` | Réglages des trois postures de l'IA (`POSTURES`) |
 

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { ABILITIES, AbilityId, ENEMIES, MAP_CONFIG, TOWERS, bestFacing, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
-import { ART, HEADLESS_TOWERS } from './art';
+import { ART, HEADLESS_TOWERS, tierKey } from './art';
 import { TERRAIN_PAD, bakeTerrain, biomeOf } from './terrain';
 import { Effects } from './effects';
 
@@ -82,6 +82,7 @@ export class GameScene extends Phaser.Scene {
   effects: Effects | null = null;
   private enemyHp = new Map<number, { hp: number; flash: number; acc: number; accAt: number }>();
   private spawnedAt = new Map<number, number>();
+  private enemyHeading = new Map<number, number>();
   private lastBaseHp = -1;
   private dustClock = 0;
   private bloom: Phaser.FX.Bloom | null = null;
@@ -503,8 +504,8 @@ export class GameScene extends Phaser.Scene {
         ring(e.x, e.y, 0.55, 0xff5d5d, 0.25);
         this.effects?.impact(px(e.x), px(e.y), 0xff5d5d, 0.8);
       } else if (e.t === 'heal') {
-        ring(e.x, e.y, e.radius, 0x7dffc0, 0.6);
-        this.effects?.sparkle(px(e.x), px(e.y), 0x7dffc0, 6);
+        // Soin : quelques étincelles vertes suffisent (l'aura du soigneur est déjà dessinée au sol).
+        this.effects?.sparkle(px(e.x), px(e.y), 0x7dffc0, 5);
       } else if (e.t === 'income' && this.map) {
         this.effects?.sparkle(px(this.map.base.x), px(this.map.base.y), 0xffd84a, 16);
         this.effects?.number(px(this.map.base.x), px(this.map.base.y) - TILE, `+${e.amount}`, '#ffd84a', true);
@@ -739,14 +740,23 @@ export class GameScene extends Phaser.Scene {
       let view = this.towers.get(tw.id);
       if (!view) {
         const headless = HEADLESS_TOWERS.has(tw.type);
-        const base = this.sprite(headless ? tw.type : `${tw.type}_base`, tw.x, tw.y, 1);
-        const head = headless ? null : this.add.image(0, 0, `${tw.type}_head`).setOrigin(0.5, 0.5);
+        const lv = 1 + tw.path.length;
+        const base = this.sprite(headless ? tierKey(tw.type, lv) : `${tw.type}_base`, tw.x, tw.y, 1);
+        const head = headless ? null : this.add.image(0, 0, tierKey(`${tw.type}_head`, lv)).setOrigin(0.5, 0.5);
         view = { base, head, angle: 0, aim: 0, kick: 0 };
         this.towers.set(tw.id, view);
       }
+      // L'image change à chaque niveau d'amélioration (canons supplémentaires, blindage, dorures…).
+      const level = 1 + tw.path.length;
+      const key = tierKey(HEADLESS_TOWERS.has(tw.type) ? tw.type : `${tw.type}_head`, level);
+      if (view.head ? view.head.texture.key !== key : view.base.texture.key !== key) {
+        if (view.head) view.head.setTexture(key);
+        else view.base.setTexture(key);
+        if (this.cur) this.effects?.sparkle(px(tw.x), px(tw.y), 0xffd84a, 14);
+      }
       const x = px(tw.x);
       const y = px(tw.y);
-      const tier = 1 + 0.09 * tw.path.length;
+      const tier = 1 + 0.06 * tw.path.length;
       const dead = tw.hp <= 0;
       const alpha = tw.disabledFor > 0 ? 0.55 : 1;
       const pulse = HEADLESS_TOWERS.has(tw.type) && !dead ? 1 + Math.sin(t * (tw.type === 'foudre' ? 7 : 3) + tw.id) * (tw.type === 'foudre' ? 0.04 : 0.03) : 1;
@@ -826,7 +836,22 @@ export class GameScene extends Phaser.Scene {
       // Vue de dessus : l'ennemi pivote vers sa direction, avec une légère ondulation de marche.
       const boss = !!ENEMIES[e.type].boss;
       const wob = Math.sin(t * (5 + ENEMIES[e.type].speed * 4) + e.id);
-      if (p && Math.hypot(e.x - p.x, e.y - p.y) > 0.001) img.setRotation(Phaser.Math.Angle.RotateTo(img.rotation, Math.atan2(e.y - p.y, e.x - p.x), dt * 9));
+      // Cap suivi en douceur, puis dandinement de marche (les volants et les fusées ne se dandinent pas).
+      let heading = this.enemyHeading.get(e.id) ?? img.rotation;
+      if (p && Math.hypot(e.x - p.x, e.y - p.y) > 0.001) heading = Phaser.Math.Angle.RotateTo(heading, Math.atan2(e.y - p.y, e.x - p.x), dt * 9);
+      this.enemyHeading.set(e.id, heading);
+      const walker = e.type !== 'runner' && e.type !== 'essaim' && e.type !== 'reine';
+      const halted = !p || Math.hypot(e.x - p.x, e.y - p.y) < 0.001;
+      img.setRotation(heading + (walker && !halted ? wob * (boss ? 0.05 : 0.12) : 0));
+      // Aura : rouge pulsée pour les boss ; halo d'élite dont l'intensité suit la menace.
+      const under = this.under!;
+      if (boss) under.fillStyle(0xff3b3b, 0.16 + 0.08 * Math.sin(t * 4)).fillCircle(x, y, size * 0.75);
+      else if ((s.threat ?? 1) >= 1.3) under.fillStyle(0xff4d6d, Math.min(0.22, ((s.threat ?? 1) - 1.2) * 0.25)).fillCircle(x, y, size * 0.55);
+      // Effets d'état : givre sur les ralentis, braises sur les brûlés.
+      if (this.effects && Math.random() < dt * 3) {
+        if (e.slowFor > 0) this.effects.frost(x, y);
+        else if (e.dotFor > 0) this.effects.impact(x, y, 0xff8a3d, 0.4);
+      }
       // Apparition : l'ennemi « pousse » en un quart de seconde.
       if (!this.spawnedAt.has(e.id)) this.spawnedAt.set(e.id, t);
       const grow = Math.min(1, (t - this.spawnedAt.get(e.id)!) / 0.25);
@@ -872,6 +897,7 @@ export class GameScene extends Phaser.Scene {
       this.enemies.delete(id);
       this.enemyHp.delete(id);
       this.spawnedAt.delete(id);
+      this.enemyHeading.delete(id);
     }
 
     // ---- ressources au sol
@@ -900,6 +926,8 @@ export class GameScene extends Phaser.Scene {
     const h = s.hero;
     if (!this.hero) this.hero = this.add.image(0, 0, 'hero').setOrigin(0.5, 0.5);
     this.hero.setVisible(h.respawnIn <= 0);
+    const heroKey = tierKey('hero', 1 + Math.min(2, Math.floor((h.upgrades?.length ?? 0) / 2)));
+    if (this.hero.texture.key !== heroKey) this.hero.setTexture(heroKey);
     if (h.respawnIn <= 0) {
       const ph = this.prev && this.prev.hero.respawnIn <= 0 ? this.prev.hero : undefined;
       const x = px(lerp(ph?.x, h.x));
