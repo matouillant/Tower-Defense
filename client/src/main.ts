@@ -607,7 +607,10 @@ function renderGame() {
   if (s.phase === 'wave') over = `<span class="tag">${s.enemies.length + s.toSpawn} ennemi${s.enemies.length + s.toSpawn > 1 ? 's' : ''}</span>`;
   else if (s.phase !== 'over') {
     const label = `Vague ${s.wave + 1}${isBossWave(s.wave + 1) ? ' · BOSS' : ''}`;
-    over = role === 'strategist'
+    // Sur téléphone, le bouton de lancement va dans la barre du bas : il ne cache plus la carte.
+    over = role === 'strategist' && SMALL_SCREEN.matches
+      ? ''
+      : role === 'strategist'
       ? `<button class="launch" data-act="ready">▶ Lancer la ${label.toLowerCase()} <small>${Math.ceil(s.phaseTimer)} s</small></button>`
       : `<span class="tag">${label} dans ${Math.ceil(s.phaseTimer)} s</span>`;
   }
@@ -628,12 +631,15 @@ function renderGame() {
 
 function renderBar(s: GameState) {
   let html = '';
+  if (role === 'strategist' && SMALL_SCREEN.matches && s.phase !== 'wave' && s.phase !== 'over') {
+    html += `<button class="launch mini-launch" data-act="ready">▶ Vague ${s.wave + 1}${isBossWave(s.wave + 1) ? ' boss' : ''} <small>${Math.ceil(s.phaseTimer)} s</small></button>`;
+  }
   if (role === 'strategist') {
-    if (s.heroController === 'ai') html += `<button data-act="ai" class="${aiPanelOpen ? 'on' : ''}">Piloter l'IA</button>`;
+    if (s.heroController === 'ai') html += `<button data-act="ai" class="${aiPanelOpen ? 'on' : ''}">${SMALL_SCREEN.matches ? 'IA' : "Piloter l'IA"}</button>`;
   } else if (role === 'hero') {
     html += `<button data-act="deliver">Rentrer à la base</button><button data-act="stop">Stop</button><button data-act="heroTree">Améliorations</button>`;
   }
-  if (scene?.canPan() || scene?.zoomedOut()) html += `<button data-act="overview">${scene.canPan() ? 'Vue d’ensemble' : 'Zoomer'}</button>`;
+  if (scene?.canPan() || scene?.zoomedOut()) html += `<button data-act="overview">${SMALL_SCREEN.matches ? (scene.canPan() ? 'Vue' : 'Zoom') : scene.canPan() ? 'Vue d’ensemble' : 'Zoomer'}</button>`;
   html += `<button data-act="menu" class="${panel?.kind === 'menu' ? 'on' : ''}">Menu</button>`;
   render($('bar'), html);
 }

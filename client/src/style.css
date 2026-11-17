@@ -370,3 +370,4 @@ button.mission.on { background: #12304a; color: #fff; }
   #toasts .toast, #toasts .toast.info { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 94vw; font-size: 12px; padding: 3px 10px; border-radius: 8px; opacity: 0.92; text-align: left; }
   #ai-say { bottom: 34px; }
 }
+.mini-launch { animation: none; font-size: 14px; padding: 6px 10px; white-space: nowrap; flex: none; }
