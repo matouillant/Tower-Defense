@@ -137,6 +137,7 @@ const confirmLabel = (act: string, label: string) => (confirming?.act === act ? 
 
 let lastToast = '';
 let lastToastAt = 0;
+const SMALL_SCREEN = window.matchMedia('(max-width: 700px)');
 function toast(text: string, cls = '') {
   // Pas de doublon rapproché, et au plus deux messages à l'écran.
   const now = performance.now();
@@ -147,8 +148,10 @@ function toast(text: string, cls = '') {
   el.className = `toast ${cls}`;
   el.textContent = text;
   $('toasts').append(el);
-  while ($('toasts').children.length > 2) $('toasts').firstElementChild!.remove();
-  setTimeout(() => el.remove(), 2800);
+  // Sur téléphone : un seul message à la fois, court, en bas de l'écran pour ne pas cacher la carte.
+  const small = SMALL_SCREEN.matches;
+  while ($('toasts').children.length > (small ? 1 : 2)) $('toasts').firstElementChild!.remove();
+  setTimeout(() => el.remove(), small ? 2200 : 2800);
 }
 
 /** Ne remplace le HTML que s'il a changé : évite de casser un appui en cours. */
