@@ -147,6 +147,16 @@ export class Effects {
       c.fillStyle = g;
       c.fillRect(0, 0, s, s);
     });
+    // Grand halo doux pour les lumières d'ambiance et les ombres de nuages (pas de pixels visibles une fois agrandi).
+    make('p_glow', 128, (c, s) => {
+      const g = c.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+      g.addColorStop(0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+      g.addColorStop(0.7, 'rgba(255,255,255,0.12)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = g;
+      c.fillRect(0, 0, s, s);
+    });
     make('p_spark', 32, (c, s) => {
       const g = c.createLinearGradient(0, s / 2, s, s / 2);
       g.addColorStop(0, 'rgba(255,255,255,0)');

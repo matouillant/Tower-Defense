@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { ABILITIES, AbilityId, ENEMIES, MAP_CONFIG, TOWERS, bestFacing, GameEvent, GameMap, GameState, Rng, TowerTypeId, baseTowerStats, effectiveTowerStats, heroStats, towerMaxHp } from '@td/shared';
 import { ART, HEADLESS_TOWERS } from './art';
-import { TERRAIN_PAD, bakeTerrain } from './terrain';
+import { TERRAIN_PAD, bakeTerrain, biomeOf } from './terrain';
 import { Effects } from './effects';
 
 export const TILE = 48;
@@ -363,6 +363,8 @@ export class GameScene extends Phaser.Scene {
     this.textures.addCanvas('terrain_lo', bakeTerrain(m, TILE, Math.min(hiScale, 1.1)));
     this.terrain = this.add.image(-TERRAIN_PAD, -TERRAIN_PAD, 'terrain_lo').setOrigin(0, 0).setDisplaySize(fullW, fullH).setDepth(0);
     this.terrainHi = false;
+    const biome = biomeOf(m);
+    this.cameras.main.setBackgroundColor(biome.edge);
 
     cells((x, y, i) => m.terrain[i] === 'rock' && this.sprite('rock', x, y, 0.95));
     this.depositViews = m.deposits.map((d) => this.sprite('deposit', d.x, d.y, 0.98));
@@ -373,8 +375,11 @@ export class GameScene extends Phaser.Scene {
     this.under = this.add.graphics().setDepth(105);
     this.ui = this.add.graphics().setDepth(5000);
     this.fxg = this.add.graphics().setDepth(6000);
-    this.effects ??= new Effects(this);
+    // Recréés à chaque partie : les objets précédents ont été détruits avec la scène.
+    this.effects = new Effects(this);
+    this.bloom = null;
     this.applyFxQuality();
+    this.addAmbience(biome.glow, biome.mote);
     this.layout(true);
   }
 
@@ -387,6 +392,53 @@ export class GameScene extends Phaser.Scene {
     this.buffer.push({ at: now, state, events, played: false });
     if (this.buffer.length > 30) this.buffer.splice(0, this.buffer.length - 30);
     this.cur = state;
+  }
+
+  /** Ambiance : halos lumineux (base, portails, gisements), ombres de nuages qui glissent, poussières en suspension. */
+  private clouds: { img: Phaser.GameObjects.Image; vx: number; vy: number }[] = [];
+  private pulses: { img: Phaser.GameObjects.Image; base: number; phase: number }[] = [];
+  private addAmbience(glow: number, mote: number) {
+    const m = this.map;
+    this.clouds = [];
+    this.pulses = [];
+    const halo = (x: number, y: number, size: number, color: number, alpha: number, depth = 99) => {
+      const img = this.add.image(px(x), px(y), 'p_glow').setBlendMode(Phaser.BlendModes.ADD).setTint(color).setAlpha(alpha).setDisplaySize(size * TILE, size * TILE).setDepth(depth);
+      this.pulses.push({ img, base: alpha, phase: (x * 7 + y * 13) % 6 });
+      return img;
+    };
+    halo(m.base.x, m.base.y, 6, glow, 0.45);
+    for (const sp of m.spawns) halo(sp.x, sp.y, 4.5, 0xb46bff, 0.45);
+    for (const d of m.deposits) halo(d.x, d.y, 2.2, 0xffc93c, 0.3);
+    if (this.effects?.quality !== 'high') return;
+    for (let i = 0; i < 4; i++) {
+      const size = (9 + i * 3) * TILE;
+      const img = this.add.image(Math.random() * this.worldW, Math.random() * this.worldH, 'p_glow').setTint(0x000000).setAlpha(0.22).setDisplaySize(size * 1.5, size).setDepth(4000);
+      this.clouds.push({ img, vx: 9 + i * 3, vy: 3 + i });
+    }
+    this.add
+      .particles(0, 0, 'p_dot', {
+        x: { min: 0, max: m.width * TILE },
+        y: { min: 0, max: m.height * TILE },
+        lifespan: { min: 3500, max: 6500 },
+        speedX: { min: -10, max: 10 },
+        speedY: { min: -14, max: -3 },
+        scale: { min: 0.08, max: 0.22 },
+        alpha: { values: [0, 0.85, 0.5, 0.85, 0] },
+        tint: mote,
+        frequency: 160,
+        blendMode: 'ADD',
+      })
+      .setDepth(4100);
+  }
+  private updateAmbience(t: number, dt: number) {
+    for (const p of this.pulses) p.img.setAlpha(p.base * (0.8 + 0.2 * Math.sin(t * 2 + p.phase)));
+    for (const c of this.clouds) {
+      c.img.x += c.vx * dt;
+      c.img.y += c.vy * dt;
+      const w = c.img.displayWidth / 2;
+      if (c.img.x - w > this.worldW) c.img.x = -w;
+      if (c.img.y - w > this.worldH) c.img.y = -w;
+    }
   }
 
   /** Éclat (bloom) sur les tirs et explosions : uniquement en qualité élevée et en WebGL. */
@@ -505,7 +557,9 @@ export class GameScene extends Phaser.Scene {
   private drawTowerSocle(tw: GameState['towers'][number], x: number, y: number, t: number, dead: boolean) {
     const u = this.under!;
     const col = dead ? 0x55596a : TOWER_COLOR[tw.type];
-    u.fillStyle(col, 0.22).fillCircle(x, y, TILE * 0.6);
+    u.fillStyle(col, 0.1).fillCircle(x, y, TILE * 0.95);
+    u.fillStyle(col, 0.16).fillCircle(x, y, TILE * 0.75);
+    u.fillStyle(col, 0.24).fillCircle(x, y, TILE * 0.6);
     u.fillStyle(col, 0.35).fillCircle(x, y, TILE * 0.47);
     u.lineStyle(2.5, col, 0.95).strokeCircle(x, y, TILE * 0.47);
     if (!tw.path.length) return;
@@ -616,6 +670,7 @@ export class GameScene extends Phaser.Scene {
     const a = A === B ? 1 : Math.min(1, Math.max(0, (renderAt - A.at) / (B.at - A.at)));
     const dt = deltaMs / 1000;
     this.effects?.update(dt);
+    this.updateAmbience(performance.now() / 1000, dt);
     if (this.lastBaseHp >= 0 && B.state.baseHp < this.lastBaseHp && this.map) {
       // La base encaisse : tremblement, étincelles rouges et perte affichée.
       this.effects?.shake(0.01, 300);
@@ -788,7 +843,7 @@ export class GameScene extends Phaser.Scene {
       }
       hpTrack.hp = total;
       if (hpTrack.acc > 0 && t - hpTrack.accAt > 0.45) {
-        if (hpTrack.acc >= 6) this.effects?.number(x, y - size * 0.5, String(Math.round(hpTrack.acc)), boss ? '#ffd84a' : '#ffffff', hpTrack.acc >= 100);
+        if (hpTrack.acc >= Math.max(12, e.maxHp * 0.12)) this.effects?.number(x, y - size * 0.5, String(Math.round(hpTrack.acc)), boss ? '#ffd84a' : '#ffffff', hpTrack.acc >= 100);
         hpTrack.acc = 0;
         hpTrack.accAt = t;
       }
@@ -798,7 +853,7 @@ export class GameScene extends Phaser.Scene {
       if (hpTrack.flash > 0) img.setTintFill(0xffffff);
       else if (e.slowFor > 0) img.setTint(0x9fdcff);
       else img.clearTint();
-      if (edef.heals) g.fillStyle(0x7dffc0, 0.07).fillCircle(x, y, edef.heals.radius * TILE).lineStyle(2, 0x7dffc0, 0.35).strokeCircle(x, y, edef.heals.radius * TILE);
+      if (edef.heals) this.under!.fillStyle(0x7dffc0, 0.05).fillCircle(x, y, edef.heals.radius * TILE).lineStyle(1.5, 0x7dffc0, 0.18).strokeCircle(x, y, edef.heals.radius * TILE);
       if (e.shield > 0) {
         g.fillStyle(0x8be6ff, 0.22).fillCircle(x, y, size * 0.6);
         g.lineStyle(3, 0xd8f6ff, 0.9).strokeCircle(x, y, size * 0.6);
