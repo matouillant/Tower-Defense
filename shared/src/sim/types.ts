@@ -114,6 +114,8 @@ export interface HeroState {
   /** Le délai est écoulé mais le stock ne suffit pas à payer la remise en route : le héros attend. */
   waitingRevive: boolean;
   upgrades: string[];
+  /** Recharge du blaster (s). */
+  atkCd: number;
   /** Talents du héros (progression entre parties). */
   perks: Perks;
 }
@@ -207,7 +209,7 @@ export interface GameStats {
 /** Événements ponctuels, pour les effets visuels et les messages côté client. */
 export type GameEvent =
   /** `chain` : positions successives des rebonds de la foudre, à plat [x1, y1, x2, y2, …]. */
-  | { t: 'shot'; kind: TowerTypeId; fx: number; fy: number; tx: number; ty: number; splash: number; chain?: number[] }
+  | { t: 'shot'; kind: TowerTypeId; fx: number; fy: number; tx: number; ty: number; splash: number; chain?: number[]; hero?: boolean }
   | { t: 'income'; amount: number; wave: number }
   | { t: 'heal'; x: number; y: number; radius: number }
   | { t: 'blast'; x: number; y: number; radius: number }

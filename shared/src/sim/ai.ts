@@ -137,11 +137,15 @@ export function decideHeroTask(game: Game): HeroTask | null {
   }
 
   // 7. Entre deux vagues : récolte, voire prospection, si le temps le permet.
-  if (!inWave) {
-    const timeLeft = s.phaseTimer;
+  // Récolte et prospection : entre les vagues, mais aussi PENDANT les vagues, sur les gisements à l'écart des ennemis.
+  // (Avant, l'IA ne minait qu'en préparation et seulement s'il restait assez de temps : dès que le stratège lançait
+  // les vagues tôt, elle ne minait plus jamais et attendait à la base.)
+  const danger = Math.max(3, posture.avoidEnemies);
+  {
+    const timeLeft = inWave ? Infinity : s.phaseTimer;
     const backHome = (x: number, y: number) =>
       (steps(x, y) + Math.abs(x - game.nearestDrop(x, y).x) + Math.abs(y - game.nearestDrop(x, y).y)) / stats.speed;
-    if (posture.prospect && hpFrac > 0.6) {
+    if (!inWave && posture.prospect && hpFrac > 0.6) {
       const zone = game.map.prospectZones.find((z) => s.prospects[z.id] <= s.wave && backHome(z.x, z.y) + G.prospectTime + 2 < timeLeft);
       if (zone || hero.task.kind === 'prospect') return zone ? { kind: 'prospect', zoneId: zone.id } : null;
     }
@@ -149,7 +153,9 @@ export function decideHeroTask(game: Game): HeroTask | null {
       let best: { id: number; d: number } | null = null;
       game.map.deposits.forEach((dep) => {
         if (s.deposits[dep.id] <= 0) return;
-        if (backHome(dep.x, dep.y) + G.harvestTime + 1 > timeLeft) return;
+        if (inWave && (hpFrac < 0.5 || enemyNear(dep.x, dep.y, danger))) return;
+        // Préparation trop courte pour un aller-retour : on mine quand même si la vague n'est pas dangereuse ici.
+        if (!inWave && timeLeft < 4 && backHome(dep.x, dep.y) > 20) return;
         // Aller-retour complet : on préfère les gisements proches d'un point de dépôt (dépôt avancé ou base).
         const drop = game.nearestDrop(dep.x, dep.y);
         const d = steps(dep.x, dep.y) + Math.abs(dep.x - drop.x) + Math.abs(dep.y - drop.y);
@@ -163,6 +169,6 @@ export function decideHeroTask(game: Game): HeroTask | null {
   // Chargé : on dépose au plus proche (dépôt avancé ou base). Pour se soigner, il faut la base : on n'y retourne que si c'est utile.
   const hasDepot = game.state.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff);
   if (hero.carry > 0) return { kind: 'deliver' };
-  if (hpFrac < (hasDepot ? 0.6 : 1) || (!atBase && !hasDepot)) return { kind: 'deliver' };
+  if (hpFrac < 0.6 || (!atBase && !hasDepot)) return { kind: 'deliver' };
   return { kind: 'idle' };
 }

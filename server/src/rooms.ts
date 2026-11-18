@@ -255,7 +255,9 @@ export class Room {
         if (!this.game) return;
         const cmd = msg.cmd;
         if (!cmd || typeof cmd !== 'object' || typeof cmd.c !== 'string') return;
-        if (!client.role || roleOfCommand(cmd) !== client.role) return this.send(client, { m: 'error', text: 'Cette action n’est pas dans ton rôle.' });
+        // Exception : quand l'IA pilote le héros, le stratège choisit ses améliorations.
+        const stratBuysForAi = cmd.c === 'heroUpgrade' && client.role === 'strategist' && this.game.state.heroController === 'ai';
+        if (!client.role || (roleOfCommand(cmd) !== client.role && !stratBuysForAi)) return this.send(client, { m: 'error', text: 'Cette action n’est pas dans ton rôle.' });
         let error: string | null;
         try {
           error = this.game.apply(client.role, cmd);

@@ -926,7 +926,8 @@ export class GameScene extends Phaser.Scene {
     const h = s.hero;
     if (!this.hero) this.hero = this.add.image(0, 0, 'hero').setOrigin(0.5, 0.5);
     this.hero.setVisible(h.respawnIn <= 0);
-    const heroKey = tierKey('hero', 1 + Math.min(2, Math.floor((h.upgrades?.length ?? 0) / 2)));
+    const nUp = h.upgrades?.length ?? 0;
+    const heroKey = tierKey('hero', nUp >= 3 ? 3 : nUp >= 1 ? 2 : 1);
     if (this.hero.texture.key !== heroKey) this.hero.setTexture(heroKey);
     if (h.respawnIn <= 0) {
       const ph = this.prev && this.prev.hero.respawnIn <= 0 ? this.prev.hero : undefined;

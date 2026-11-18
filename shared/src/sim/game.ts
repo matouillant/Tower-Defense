@@ -124,7 +124,7 @@ export class Game {
       enemies: [],
       pickups: [],
       traps: [],
-      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: 'idle' }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [], perks: heroPerks },
+      hero: { x: map.base.x, y: map.base.y, hp: HERO_CONFIG.maxHp, carry: 0, task: { kind: 'idle' }, progress: 0, respawnIn: 0, waitingRevive: false, upgrades: [], atkCd: 0, perks: heroPerks },
       deposits: map.deposits.map(() => G.depositStock),
       prospects: map.prospectZones.map(() => 0),
       ai: { repairBudgetPct: 0.3, repairThreshold: 0.6, posture: 'equilibree', allowance: 0, spent: 0, order: null, orderCooldown: 0, message: '' },
@@ -850,11 +850,39 @@ export class Game {
     return best;
   }
 
+  /** Blaster du héros : tir automatique sur l'ennemi le plus proche à portée, et régénération éventuelle. */
+  private heroCombat(dt: number) {
+    const s = this.state;
+    const hero = s.hero;
+    if (hero.respawnIn > 0) return;
+    const stats = heroStats(hero.upgrades, hero.perks);
+    if (stats.regen > 0) hero.hp = Math.min(stats.maxHp, hero.hp + stats.regen * dt);
+    hero.atkCd = Math.max(0, (hero.atkCd ?? 0) - dt);
+    if (hero.atkCd > 0 || stats.damage <= 0) return;
+    let target: EnemyState | null = null;
+    let bd = stats.attackRange;
+    for (const e of s.enemies) {
+      if (e.hp <= 0) continue;
+      const d = dist(e.x, e.y, hero.x, hero.y);
+      if (d <= bd) {
+        bd = d;
+        target = e;
+      }
+    }
+    if (!target) return;
+    hero.atkCd = stats.attackCooldown;
+    const dmg = (stats.damage * (1 + s.wave * 0.04)) / (s.cooldownMult || 1);
+    const victims = stats.attackSplash > 0 ? s.enemies.filter((e) => e.hp > 0 && dist(e.x, e.y, target!.x, target!.y) <= stats.attackSplash) : [target];
+    for (const e of victims) this.damageEnemy(e, dmg, false, 'hero');
+    this.emit({ t: 'shot', kind: 'canon', fx: hero.x, fy: hero.y, tx: target.x, ty: target.y, splash: stats.attackSplash, hero: true });
+  }
+
   private updateHero(dt: number) {
     const s = this.state;
     const hero = s.hero;
     const stats = heroStats(hero.upgrades, hero.perks);
     const base = this.map.base;
+    this.heroCombat(dt);
     if (hero.respawnIn > 0) {
       hero.respawnIn -= dt;
       if (hero.respawnIn <= 0) {
@@ -908,7 +936,8 @@ export class Game {
         // Chargé : on file au point de dépôt le plus proche (base ou dépôt avancé). Une fois vide et en forme, on s'arrête là.
         // Chargé : point de dépôt le plus proche. Vide : on ne file à la base que pour s'y soigner (sous 60 % des PV si un dépôt existe).
         const hasDepot = this.nearestDrop(hero.x, hero.y) !== base || s.towers.some((t) => t.hp > 0 && TOWERS[t.type].base.dropOff);
-        if (hero.carry === 0 && (hero.hp >= stats.maxHp || (hasDepot && hero.hp >= stats.maxHp * 0.6 && dist(hero.x, hero.y, base.x, base.y) > HERO_CONFIG.baseRadius))) return done();
+        // Soigné à 85 % suffit : le héros ne reste plus planté à la base pour quelques PV.
+        if (hero.carry === 0 && (hero.hp >= stats.maxHp * 0.85 || (hasDepot && hero.hp >= stats.maxHp * 0.6 && dist(hero.x, hero.y, base.x, base.y) > HERO_CONFIG.baseRadius))) return done();
         const drop = hero.carry > 0 ? this.nearestDrop(hero.x, hero.y) : base;
         this.moveHero(drop.x, drop.y, 0.5, dt);
         break;
@@ -1068,7 +1097,9 @@ export class Game {
     const poor = 'Pas assez de ressources.';
 
     if (cmd.c === 'task' || cmd.c === 'heroUpgrade') {
-      if (role !== 'hero') return 'Commande réservée au héros.';
+      // Quand l'IA pilote le héros, c'est le stratège qui choisit ses améliorations.
+      const stratForAi = cmd.c === 'heroUpgrade' && role === 'strategist' && s.heroController === 'ai';
+      if (role !== 'hero' && !stratForAi) return 'Commande réservée au héros.';
       if (cmd.c === 'heroUpgrade') {
         const last = s.hero.upgrades.length ? s.hero.upgrades[s.hero.upgrades.length - 1] : null;
         const node = HERO_NODES.find((n) => n.id === cmd.nodeId);
@@ -1274,7 +1305,7 @@ export class Game {
         t.maxHpFactor = 1;
         t.hp = towerMaxHp(t) * frac;
       }
-    else if (id === 'tactique') s.cooldownMult *= 0.85;
+    else if (id === 'tactique') s.cooldownMult *= 0.8; // réutilisé : bonus de dégâts du blaster (dégâts / cooldownMult)
     this.emit({ t: 'msg', from: 'jeu', text: `Récompense : ${REWARDS[id].name}.` });
   }
 }

@@ -125,6 +125,11 @@ export function heroStats(upgrades: string[], perks?: Perks): HeroStats {
     repairCostMult: 1,
     wearMult: 1,
     harvestMult: 1,
+    damage: HERO_CONFIG.damage,
+    attackRange: HERO_CONFIG.attackRange,
+    attackCooldown: HERO_CONFIG.attackCooldown,
+    attackSplash: 0,
+    regen: 0,
   };
   for (const id of upgrades) {
     const node = HERO_NODES.find((n) => n.id === id);

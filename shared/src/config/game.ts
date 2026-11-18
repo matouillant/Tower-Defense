@@ -66,6 +66,10 @@ export const HERO_CONFIG = {
   /** Régénération près de la base. */
   baseRegen: 12,
   baseRadius: 1.5,
+  /** Blaster de base : faible, mais le héros n'est plus sans défense. */
+  damage: 6,
+  attackRange: 2.5,
+  attackCooldown: 0.9,
 };
 
 export interface HeroStats {
@@ -79,6 +83,14 @@ export interface HeroStats {
   /** Multiplicateur de l'usure causée par ses réparations. */
   wearMult: number;
   harvestMult: number;
+  /** Blaster du héros : tire tout seul sur l'ennemi le plus proche, même en travaillant. */
+  damage: number;
+  attackRange: number;
+  attackCooldown: number;
+  /** Zone d'explosion du tir (0 = cible unique). */
+  attackSplash: number;
+  /** Régénération permanente (PV/s), où qu'il soit. */
+  regen: number;
 }
 
 export interface HeroNode {
@@ -101,6 +113,19 @@ export const HERO_NODES: HeroNode[] = [
   { id: 'telecommande', name: 'Télécommande', desc: 'Portée de réparation de 6 cases.', cost: 120, parent: 'bras-long', stats: { repairRange: 6 } },
   { id: 'artisan', name: 'Artisan', desc: 'Ses réparations n’usent presque plus les tours.', cost: 130, parent: 'econome', stats: { wearMult: 0.3 } },
   { id: 'ferrailleur', name: 'Ferrailleur', desc: 'Récolte deux fois plus sur les gisements.', cost: 110, parent: 'econome', stats: { harvestMult: 2 } },
+  // Niveau 3 de chaque voie.
+  { id: 'mule', name: 'Mule blindée', desc: 'Porte 200 et encaisse mieux (180 PV).', cost: 180, parent: 'porteur', stats: { carryCap: 200, maxHp: 180 } },
+  { id: 'jetpack', name: 'Réacteurs dorsaux', desc: 'Vitesse 7, 200 PV, se régénère partout.', cost: 200, parent: 'insaisissable', stats: { speed: 7, maxHp: 200, regen: 3 } },
+  { id: 'nanobots', name: 'Nanobots', desc: 'Réparation à distance ultra-rapide (90 PV/s).', cost: 200, parent: 'soudeur', stats: { repairRate: 90 } },
+  { id: 'drone', name: 'Drone de réparation', desc: 'Répare jusqu’à 9 cases de distance.', cost: 180, parent: 'telecommande', stats: { repairRange: 9 } },
+  { id: 'maitre-artisan', name: 'Maître artisan', desc: 'Réparations moitié prix et sans aucune usure.', cost: 190, parent: 'artisan', stats: { wearMult: 0, repairCostMult: 0.5 } },
+  { id: 'excavatrice', name: 'Excavatrice', desc: 'Récolte 3,5 fois plus sur les gisements.', cost: 180, parent: 'ferrailleur', stats: { harvestMult: 3.5 } },
+  // Voie combat : le blaster de base devient une vraie arme.
+  { id: 'tireur', name: 'Tireur', desc: 'Blaster renforcé : dégâts ×3, portée 3,5.', cost: 90, parent: null, stats: { damage: 18, attackRange: 3.5 } },
+  { id: 'elite', name: 'Tireur d’élite', desc: 'Gros dégâts à longue portée (45, portée 5).', cost: 140, parent: 'tireur', stats: { damage: 45, attackRange: 5, attackCooldown: 1.1 } },
+  { id: 'mitrailleur', name: 'Mitrailleur', desc: 'Tire très vite (4 tirs/s).', cost: 140, parent: 'tireur', stats: { damage: 14, attackCooldown: 0.25 } },
+  { id: 'canon-epaule', name: 'Canon d’épaule', desc: 'Obus explosifs (90, zone 1,3).', cost: 220, parent: 'elite', stats: { damage: 90, attackRange: 5, attackSplash: 1.3, attackCooldown: 1.4 } },
+  { id: 'gatling', name: 'Gatling', desc: '6 tirs/s et 160 PV.', cost: 220, parent: 'mitrailleur', stats: { damage: 20, attackCooldown: 0.16, maxHp: 160 } },
 ];
 
 export type AbilityId = 'ralentir' | 'foudre' | 'surcharge';
@@ -117,7 +142,7 @@ export const REWARDS: Record<RewardId, { name: string; desc: string }> = {
   butin: { name: 'Butin', desc: 'Un gros apport de ressources.' },
   'remise-a-neuf': { name: 'Remise à neuf', desc: 'Toutes les tours réparées gratuitement, sans usure.' },
   renfort: { name: 'Renfort', desc: 'Efface l’usure de toutes les tours.' },
-  tactique: { name: 'Tactique', desc: 'Compétences rechargées 15 % plus vite, définitivement.' },
+  tactique: { name: 'Entraînement', desc: 'Le blaster du héros fait +25 % de dégâts, définitivement.' },
 };
 /** Prime de fin de vague : croît avec la vague (vague 1 : 28, vague 10 : 100, vague 20 : 180). */
 export const WAVE_END_BONUS = { base: 20, perWave: 8 };

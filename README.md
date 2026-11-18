@@ -16,6 +16,8 @@ Tower defense coopératif à 2 joueurs, jouable dans le navigateur (ordinateur e
 - **Bilan de fin de partie** : meilleure tour, dégâts par source, courbe des PV de la base, partage.
 - **Son et musique** synthétisés dans le navigateur (aucun fichier), musique qui suit l'intensité de la partie ; effets visuels (éclat, particules, chiffres de dégâts, tremblements) réglables dans le menu.
 - **Tourelles, héros et ennemis plus expressifs** : chaque niveau d'amélioration change l'apparence de la tourelle (blindage, canons, bobines, dorures au niveau 4), le héros s'équipe au fil de ses améliorations, les ennemis se dandinent, givrent ou brûlent, et une aura signale boss et élites quand la menace monte. Les compétences du stratège (ralentir, foudre, surcharge) ont été retirées.
+- **Héros combattant** : blaster automatique, arbre de 4 voies sur 3 niveaux (vitesse, réparation, récolte, combat) ; quand l'IA pilote, le stratège achète ses améliorations (bouton « Héros »).
+- **Mobile** : actions au relâchement du doigt (faire défiler un panneau n'achète plus rien), achats et ventes confirmés par un second appui, lancement de vague dans la barre du bas.
 - **Directeur de menace** : tant que la défense ne laisse rien approcher, les vagues suivantes grossissent (affiché « ☠ ×1,4 » dans le bandeau) ; quand la base encaisse, la pression redescend, jamais sous le plancher du niveau choisi.
 - **4 biomes** selon la carte (prairie alien, désert, toundra, volcan) : sol nuancé, route continue aux bords lumineux, lisière de végétation, halos, ombres de nuages et poussières en suspension.
 - **3 niveaux de difficulté** (Normal, Difficile par défaut, Cauchemar), choisis par le stratège dans le salon ou pour la partie suivante.

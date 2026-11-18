@@ -618,3 +618,46 @@ describe('directeur de menace', () => {
     expect(s.stats.maxThreat).toBeGreaterThan(1.2);
   });
 });
+
+describe('IA : récolte', () => {
+  it('mine aussi pendant une vague si le gisement est à l’écart des ennemis', () => {
+    const g = new Game(generateMap(2), 'normal');
+    g.state.phase = 'wave';
+    g.state.enemies = [];
+    g.state.phaseTimer = 0;
+    expect(decideHeroTask(g)?.kind).toBe('harvest');
+  });
+  it('mine même quand le stratège lance les vagues sans attendre', () => {
+    const g = new Game(generateMap(2), 'normal');
+    g.state.phaseTimer = 2;
+    expect(decideHeroTask(g)?.kind).toBe('harvest');
+  });
+});
+
+describe('héros : combat et arbre étoffé', () => {
+  const addEnemyAt = (game: Game, x: number, y: number) => {
+    const def = ENEMIES.grunt;
+    const e = { id: 9900, type: 'grunt' as EnemyTypeId, pathIdx: 0, d: 0, x, y, hp: 500, maxHp: 500, shield: 0, attack: def.attack, bounty: def.bounty, slowFor: 0, slowFactor: 0, dotFor: 0, dotDps: 0, atkCd: 99, spawnCd: 0, halted: 0, dotSrc: 0 };
+    game.state.enemies.push(e);
+    return e;
+  };
+  it('le blaster tire seul sur un ennemi proche, crédité au héros', () => {
+    const g = new Game(generateMap(2), 'normal');
+    const h = g.state.hero;
+    const e = addEnemyAt(g, h.x + 1, h.y);
+    g.state.phase = 'wave';
+    (g as any).heroCombat(DT);
+    expect(e.hp).toBeLessThan(e.maxHp);
+    expect(g.state.stats.bySource.hero.damage).toBeGreaterThan(0);
+  });
+  it('le stratège achète les améliorations quand l’IA pilote, jusqu’au niveau 3', () => {
+    const g = new Game(generateMap(2), 'normal');
+    g.state.scrap = 2000;
+    expect(g.apply('strategist', { c: 'heroUpgrade', nodeId: 'tireur' })).toBeNull();
+    expect(g.apply('strategist', { c: 'heroUpgrade', nodeId: 'elite' })).toBeNull();
+    expect(g.apply('strategist', { c: 'heroUpgrade', nodeId: 'canon-epaule' })).toBeNull();
+    expect(heroStats(g.state.hero.upgrades).attackSplash).toBeGreaterThan(0);
+    g.state.heroController = 'human';
+    expect(g.apply('strategist', { c: 'heroUpgrade', nodeId: 'sprinteur' })).toBeTruthy();
+  });
+});

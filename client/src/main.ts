@@ -6,6 +6,7 @@ import {
   GameMap,
   GameState,
   HERO_NODES,
+  HeroStats,
   MISSIONS,
   MissionId,
   TALENTS,
@@ -159,9 +160,18 @@ function toast(text: string, cls = '') {
 
 /** Ne remplace le HTML que s'il a changé : évite de casser un appui en cours. */
 const lastHtml = new WeakMap<HTMLElement, string>();
+const CD = /<small class="cd">([^<]*)<\/small>/g;
 function render(el: HTMLElement, html: string) {
-  if (lastHtml.get(el) === html) return;
+  const prev = lastHtml.get(el);
+  if (prev === html) return;
   lastHtml.set(el, html);
+  // Seuls les comptes à rebours ont changé : on met à jour leur texte sans recréer les boutons
+  // (un bouton recréé sous le doigt fait rater l'appui).
+  if (prev !== undefined && prev.replace(CD, '') === html.replace(CD, '')) {
+    const values = [...html.matchAll(CD)].map((m) => m[1]);
+    el.querySelectorAll('small.cd').forEach((n, i) => (n.textContent = values[i] ?? ''));
+    return;
+  }
   el.innerHTML = html;
 }
 
@@ -466,7 +476,8 @@ net.onMessage = (msg: ServerMessage) => {
 function soundOf(e: GameEvent) {
   switch (e.t) {
     case 'shot':
-      if (e.splash >= 1.2) audio.play('explosion', 0.6);
+      if (e.hero) audio.play('laser', 0.5);
+      else if (e.splash >= 1.2) audio.play('explosion', 0.6);
       else if (e.kind !== 'relais' && e.kind !== 'depot') audio.play(e.kind, 0.8);
       break;
     case 'death': audio.play(e.boss ? 'bossDeath' : 'death', 0.7); break;
@@ -521,6 +532,8 @@ function setPreview(id: TowerTypeId | null) {
 
 function select(next: typeof panel) {
   setPreview(null);
+  if (next && JSON.stringify(next) !== JSON.stringify(panel)) panelOpenedAt = performance.now();
+  armedBuy = null;
   panel = next;
   aiPanelOpen = false;
   if (scene) {
@@ -614,7 +627,7 @@ function renderGame() {
     over = role === 'strategist' && SMALL_SCREEN.matches
       ? ''
       : role === 'strategist'
-      ? `<button class="launch" data-act="ready">▶ Lancer la ${label.toLowerCase()} <small>${Math.ceil(s.phaseTimer)} s</small></button>`
+      ? `<button class="launch" data-act="ready">▶ Lancer la ${label.toLowerCase()} <small class="cd">${Math.ceil(s.phaseTimer)} s</small></button>`
       : `<span class="tag">${label} dans ${Math.ceil(s.phaseTimer)} s</span>`;
   }
   if (!online) over += `<span class="tag bad">hors ligne</span>`;
@@ -628,6 +641,7 @@ function renderGame() {
   if (scene) scene.follow = role === 'hero';
   renderBar(s);
   renderPanel(s);
+  applyArmed();
   renderAiPanel(s);
   renderModal(s);
 }
@@ -635,14 +649,18 @@ function renderGame() {
 function renderBar(s: GameState) {
   let html = '';
   if (role === 'strategist' && SMALL_SCREEN.matches && s.phase !== 'wave' && s.phase !== 'over') {
-    html += `<button class="launch mini-launch" data-act="ready">▶ Vague ${s.wave + 1}${isBossWave(s.wave + 1) ? ' boss' : ''} <small>${Math.ceil(s.phaseTimer)} s</small></button>`;
+    html += `<button class="launch mini-launch" data-act="ready">▶ V${s.wave + 1}${isBossWave(s.wave + 1) ? ' ☠' : ''} <small class="cd">${Math.ceil(s.phaseTimer)} s</small></button>`;
   }
   if (role === 'strategist') {
-    if (s.heroController === 'ai') html += `<button data-act="ai" class="${aiPanelOpen ? 'on' : ''}">${SMALL_SCREEN.matches ? 'IA' : "Piloter l'IA"}</button>`;
+    if (s.heroController === 'ai') {
+      html += `<button data-act="ai" class="${aiPanelOpen ? 'on' : ''}">${SMALL_SCREEN.matches ? 'IA' : "Piloter l'IA"}</button>`;
+      const n = availableHeroUpgrades(s.hero.upgrades).filter((u) => u.cost <= s.scrap).length;
+      html += `<button data-act="heroTree" class="${panel?.kind === 'heroTree' ? 'on' : ''}">Héros${n ? ` <span class="dot">${n}</span>` : ''}</button>`;
+    }
   } else if (role === 'hero') {
     html += `<button data-act="deliver">Rentrer à la base</button><button data-act="stop">Stop</button><button data-act="heroTree">Améliorations</button>`;
   }
-  if (scene?.canPan() || scene?.zoomedOut()) html += `<button data-act="overview">${SMALL_SCREEN.matches ? (scene.canPan() ? 'Vue' : 'Zoom') : scene.canPan() ? 'Vue d’ensemble' : 'Zoomer'}</button>`;
+  if (scene?.canPan() || scene?.zoomedOut()) html += `<button data-act="overview">${SMALL_SCREEN.matches ? (scene.canPan() ? '⤢' : '⤡') : scene.canPan() ? 'Vue d’ensemble' : 'Zoomer'}</button>`;
   html += `<button data-act="menu" class="${panel?.kind === 'menu' ? 'on' : ''}">Menu</button>`;
   render($('bar'), html);
 }
@@ -795,12 +813,29 @@ function towerPanel(s: GameState, t: TowerState): string {
   return html;
 }
 
+const HERO_DELTAS: [keyof HeroStats, string, (v: number) => string, boolean?][] = [
+  ['maxHp', 'PV', fmt], ['speed', 'Vitesse', (v) => v.toFixed(1)], ['carryCap', 'Charge', fmt], ['repairRate', 'Réparation', (v) => `${fmt(v)}/s`],
+  ['repairRange', 'Portée de réparation', (v) => v.toFixed(1)], ['harvestMult', 'Récolte', (v) => `×${v}`], ['repairCostMult', 'Coût des réparations', (v) => `×${v}`, true],
+  ['wearMult', 'Usure', (v) => `×${v}`, true], ['damage', 'Blaster', fmt], ['attackRange', 'Portée de tir', (v) => v.toFixed(1)],
+  ['attackCooldown', 'Délai de tir', (v) => `${v.toFixed(2)} s`, true], ['attackSplash', 'Zone', (v) => v.toFixed(1)], ['regen', 'Régénération', (v) => `${v}/s`],
+];
 function heroTreePanel(s: GameState): string {
   const owned = s.hero.upgrades.map((id) => HERO_NODES.find((n) => n.id === id)?.name ?? id);
   const ups = availableHeroUpgrades(s.hero.upgrades);
-  return `<div class="panel-head"><h3>Améliorations du héros</h3><button data-act="close">✕</button></div>
-    <div class="muted">${owned.length ? 'Voie choisie : ' + owned.join(' › ') : 'Une seule voie possible. Payé sur le stock commun.'}</div>
-    ${ups.length ? `<div class="grid">${ups.map((n) => `<button data-act="heroUpgrade" data-id="${n.id}" ${s.scrap < n.cost ? 'disabled' : ''}><b>${n.name}</b> · ${n.cost}<small>${n.desc}</small></button>`).join('')}</div>` : '<div class="muted">Arbre terminé.</div>'}`;
+  const cur = heroStats(s.hero.upgrades, s.hero.perks);
+  const tiles = [statTile(fmt(cur.maxHp), 'PV'), statTile(cur.speed.toFixed(1), 'vitesse'), statTile(fmt(cur.carryCap), 'charge'), statTile(`${fmt(cur.damage)}`, `blaster · ${cur.attackRange.toFixed(1)}`)];
+  const cards = ups.map((n) => {
+    const next = heroStats([...s.hero.upgrades, n.id], s.hero.perks);
+    const chips = HERO_DELTAS.filter(([k]) => Math.abs((cur[k] as number) - (next[k] as number)) > 1e-9)
+      .map(([k, label, f, low]) => `<span class="chip ${(low ? next[k] < cur[k] : next[k] > cur[k]) ? 'up' : 'down'}">${label} ${f(cur[k] as number)} → ${f(next[k] as number)}</span>`).join('');
+    const poor = s.scrap < n.cost;
+    return `<button class="up" data-act="heroUpgrade" data-id="${n.id}" ${poor ? 'disabled' : ''}><span class="uphead"><b>${n.name}</b><em class="${poor ? 'poor' : ''}">${n.cost}</em></span><small>${n.desc}</small><span class="deltas">${chips}</span>${poor ? `<small class="need">Il manque ${Math.ceil(n.cost - s.scrap)}</small>` : ''}</button>`;
+  }).join('');
+  return `<div class="panel-head"><h3>Améliorations du héros <span class="pips">${'●'.repeat(s.hero.upgrades.length)}${'○'.repeat(3 - s.hero.upgrades.length)}</span></h3><button data-act="close">✕</button></div>
+    ${owned.length ? `<div class="crumbs">${owned.join(' › ')}</div>` : ''}
+    <div class="tiles">${tiles.join('')}</div>
+    <div class="hint">${ups.length > 1 ? 'Choisis une voie : les autres seront fermées. ' : ''}Payé sur le stock commun.${role === 'strategist' ? ' L’IA utilise le héros amélioré.' : ''}</div>
+    ${ups.length ? `<div class="ups">${cards}</div>` : '<div class="muted">Arbre terminé.</div>'}`;
 }
 
 const LEVELS: [number, string][] = [[0, 'Coupé'], [0.35, 'Bas'], [0.7, 'Moyen'], [1, 'Fort']];
@@ -1096,10 +1131,60 @@ document.addEventListener('visibilitychange', () => document.hidden && autoPause
 window.addEventListener('blur', autoPause);
 window.addEventListener('pagehide', autoPause);
 
-// Un seul gestionnaire pour toutes les actions de l'interface de jeu.
+// ---------------------------------------------------------------- appuis fiables sur écran tactile
+// Souris : l'action part à l'appui (réactif). Tactile : elle part au relâchement, seulement si le doigt n'a presque
+// pas bougé — commencer à faire défiler un panneau avec le doigt posé sur un bouton n'achète plus rien.
+let touchStart: { btn: HTMLButtonElement; x: number; y: number; at: number; id: number } | null = null;
+/** Achats et ventes : sur écran tactile, il faut toucher deux fois le même bouton (le premier appui l'arme). */
+const NEEDS_CONFIRM = new Set(['upgrade', 'heroUpgrade', 'sell', 'removeTrap', 'buildTrap', 'respec']);
+let armedBuy: { key: string; at: number } | null = null;
+const buyKey = (btn: HTMLElement) => `${btn.dataset.act}|${btn.dataset.id ?? ''}|${panel ? JSON.stringify(panel) : ''}`;
+/** Juste après l'ouverture d'un panneau, on ignore les appuis dedans (le doigt qui l'a ouvert, un rebond). */
+let panelOpenedAt = 0;
+
+function applyArmed() {
+  document.querySelectorAll('.armed').forEach((el) => el.classList.remove('armed'));
+  if (!armedBuy || performance.now() - armedBuy.at > 4000) return;
+  for (const el of document.querySelectorAll<HTMLElement>('#panel [data-act]')) if (buyKey(el) === armedBuy.key) el.classList.add('armed');
+}
+
 $('game').addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType === 'mouse') return gameAction(ev, (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-act]'));
   const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-act]');
+  touchStart = btn ? { btn, x: ev.clientX, y: ev.clientY, at: performance.now(), id: ev.pointerId } : null;
+});
+$('game').addEventListener('pointermove', (ev) => {
+  if (touchStart && ev.pointerId === touchStart.id && Math.hypot(ev.clientX - touchStart.x, ev.clientY - touchStart.y) > 10) touchStart = null;
+});
+$('game').addEventListener('pointercancel', () => (touchStart = null));
+$('game').addEventListener('pointerup', (ev) => {
+  const t = touchStart;
+  touchStart = null;
+  if (!t || ev.pointerType === 'mouse' || ev.pointerId !== t.id) return;
+  if (Math.hypot(ev.clientX - t.x, ev.clientY - t.y) > 10 || performance.now() - t.at > 900) return;
+  // Le bouton a pu être redessiné entre-temps : on reprend celui qui est sous le doigt, s'il fait la même chose.
+  const now = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLButtonElement>('[data-act]');
+  const btn = now && now.dataset.act === t.btn.dataset.act && now.dataset.id === t.btn.dataset.id ? now : t.btn.isConnected ? t.btn : null;
+  gameAction(ev, btn);
+});
+
+// Un seul gestionnaire pour toutes les actions de l'interface de jeu.
+function gameAction(ev: PointerEvent, btn: HTMLButtonElement | null) {
   if (!btn || btn.disabled || !state) return;
+  const touch = ev.pointerType !== 'mouse';
+  if (touch && btn.closest('#panel') && performance.now() - panelOpenedAt < 350) return;
+  if (touch && NEEDS_CONFIRM.has(btn.dataset.act ?? '')) {
+    const key = buyKey(btn);
+    if (!armedBuy || armedBuy.key !== key || performance.now() - armedBuy.at > 4000) {
+      armedBuy = { key, at: performance.now() };
+      audio.play('click');
+      applyArmed();
+      setTimeout(() => state && applyArmed(), 4100);
+      return;
+    }
+    armedBuy = null;
+    applyArmed();
+  }
   // Le plein écran exige un « vrai » geste : il est traité sur le clic, pas sur l'appui.
   if (btn.dataset.act === 'fullscreen') return;
   ev.preventDefault();
@@ -1190,7 +1275,7 @@ $('game').addEventListener('pointerdown', (ev) => {
       return goHome();
   }
   renderGame();
-});
+}
 
 $('game').addEventListener('click', (ev) => {
   if ((ev.target as HTMLElement).closest('[data-act="fullscreen"]')) toggleFullscreen();
